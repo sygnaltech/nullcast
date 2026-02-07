@@ -1,11 +1,98 @@
 <Window x:Class="VideoPlayer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Video Player" Height="450" Width="800">
+        xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+        Title="Video Player"
+        Height="600" Width="900"
+        WindowState="Normal"
+        Background="Black"
+        Closing="Window_Closing">
+
     <Grid>
-        <TextBlock Text="Hello, World!"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   FontSize="32"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Menu Bar -->
+        <Menu Grid.Row="0" Background="#333" Foreground="White">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open URL..." Click="OpenUrl_Click" InputGestureText="Ctrl+O"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="Exit_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Video Player -->
+        <Grid Grid.Row="1" Background="Black">
+            <vlc:VideoView x:Name="VideoView"/>
+
+            <!-- Loading/Status overlay -->
+            <TextBlock x:Name="StatusText"
+                       Text="Press Ctrl+O or File > Open URL to load a video"
+                       Foreground="Gray"
+                       FontSize="18"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Controls -->
+        <Grid Grid.Row="2" Background="#222" Height="50">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Play/Pause Button -->
+            <Button x:Name="PlayPauseButton"
+                    Grid.Column="0"
+                    Content="▶"
+                    Width="40" Height="35"
+                    Margin="10,0"
+                    FontSize="16"
+                    Click="PlayPause_Click"/>
+
+            <!-- Progress Slider -->
+            <Slider x:Name="ProgressSlider"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Margin="10,0"
+                    Minimum="0"
+                    Maximum="100"
+                    PreviewMouseDown="ProgressSlider_PreviewMouseDown"
+                    PreviewMouseUp="ProgressSlider_PreviewMouseUp"/>
+
+            <!-- Time Display -->
+            <TextBlock x:Name="TimeDisplay"
+                       Grid.Column="2"
+                       Foreground="White"
+                       VerticalAlignment="Center"
+                       Margin="10,0"
+                       Text="00:00 / 00:00"/>
+
+            <!-- Volume -->
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="10,0">
+                <TextBlock Text="🔊"
+                           Foreground="White"
+                           VerticalAlignment="Center"
+                           FontSize="14"/>
+                <Slider x:Name="VolumeSlider"
+                        Width="80"
+                        VerticalAlignment="Center"
+                        Margin="5,0,10,0"
+                        Minimum="0"
+                        Maximum="100"
+                        Value="100"
+                        ValueChanged="VolumeSlider_ValueChanged"/>
+            </StackPanel>
+        </Grid>
     </Grid>
+
+    <Window.InputBindings>
+        <KeyBinding Key="O" Modifiers="Ctrl" Command="{Binding OpenUrlCommand}"/>
+        <KeyBinding Key="Space" Command="{Binding PlayPauseCommand}"/>
+    </Window.InputBindings>
 </Window>
