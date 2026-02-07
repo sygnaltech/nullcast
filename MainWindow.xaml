@@ -70,6 +70,7 @@
                     Margin="10,0"
                     Minimum="0"
                     Maximum="100"
+                    IsMoveToPointEnabled="True"
                     PreviewMouseDown="ProgressSlider_PreviewMouseDown"
                     PreviewMouseUp="ProgressSlider_PreviewMouseUp"/>
 
