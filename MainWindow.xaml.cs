@@ -3,10 +3,12 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
 
@@ -273,6 +275,62 @@ namespace VideoPlayer
         private void VideoView_Loaded(object sender, RoutedEventArgs e)
         {
             VideoView.Background = System.Windows.Media.Brushes.Black;
+
+            // Find the HwndHost inside VideoView and set its background
+            SetHwndBackground();
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetClassLongPtr(IntPtr hWnd, int nIndex);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr CreateSolidBrush(int crColor);
+
+        [DllImport("user32.dll")]
+        private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
+
+        private const int GCL_HBRBACKGROUND = -10;
+
+        private void SetHwndBackground()
+        {
+            try
+            {
+                // Find the HwndHost in the visual tree
+                var hwndHost = FindVisualChild<HwndHost>(VideoView);
+                if (hwndHost != null)
+                {
+                    var hwnd = hwndHost.Handle;
+                    if (hwnd != IntPtr.Zero)
+                    {
+                        // Create a black brush and set it as the window class background
+                        var blackBrush = CreateSolidBrush(0x00000000); // RGB(0,0,0)
+                        SetClassLongPtr(hwnd, GCL_HBRBACKGROUND, blackBrush);
+                        InvalidateRect(hwnd, IntPtr.Zero, true);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore errors - video will still work
+            }
+        }
+
+        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child is T result)
+                    return result;
+
+                var childResult = FindVisualChild<T>(child);
+                if (childResult != null)
+                    return childResult;
+            }
+            return null;
         }
 
         private bool _isFullscreen;

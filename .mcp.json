@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "havoc": {
+      "type": "http",
+      "url": "https://spec-mcp.sygnal.com/mcp",
+      "headers": {
+        "X-MCP-API-Key": "mcp_DQeoVHWCADRN916dVjFzmor8NEux0xaQ"
+      }
+    }
+  }
+}
