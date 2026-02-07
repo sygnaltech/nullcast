@@ -6,7 +6,8 @@
         Height="600" Width="900"
         WindowState="Normal"
         Background="Black"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        KeyDown="Window_KeyDown">
 
     <Grid>
         <Grid.RowDefinitions>
@@ -16,7 +17,7 @@
         </Grid.RowDefinitions>
 
         <!-- Menu Bar -->
-        <Menu Grid.Row="0" Background="#333" Foreground="White">
+        <Menu x:Name="MenuBar" Grid.Row="0" Background="#333" Foreground="White">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open URL..." Click="OpenUrl_Click" InputGestureText="Ctrl+O"/>
                 <Separator/>
@@ -25,8 +26,11 @@
         </Menu>
 
         <!-- Video Player -->
-        <Grid Grid.Row="1" Background="Black">
-            <vlc:VideoView x:Name="VideoView"/>
+        <Grid Grid.Row="1" Background="Black"
+              AllowDrop="True"
+              DragOver="VideoArea_DragOver"
+              Drop="VideoArea_Drop">
+            <vlc:VideoView x:Name="VideoView" Loaded="VideoView_Loaded"/>
 
             <!-- Loading/Status overlay -->
             <TextBlock x:Name="StatusText"
@@ -38,7 +42,7 @@
         </Grid>
 
         <!-- Controls -->
-        <Grid Grid.Row="2" Background="#222" Height="50">
+        <Grid x:Name="ControlsBar" Grid.Row="2" Background="#222" Height="50">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>

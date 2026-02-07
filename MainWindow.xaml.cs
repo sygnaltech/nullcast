@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -257,6 +259,178 @@ namespace VideoPlayer
             _mediaPlayer?.Stop();
             _mediaPlayer?.Dispose();
             _libVLC?.Dispose();
+        }
+
+        private void VideoArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount == 2)
+            {
+                ToggleFullscreen();
+                e.Handled = true;
+            }
+        }
+
+        private void VideoView_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Hook into the VideoView's internal grid to capture mouse events
+            if (VideoView.Content is System.Windows.Controls.Grid grid)
+            {
+                grid.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
+                grid.Background = System.Windows.Media.Brushes.Transparent;
+            }
+        }
+
+        private bool _isFullscreen;
+        private WindowState _previousWindowState;
+        private double _previousWidth;
+        private double _previousHeight;
+        private double _previousLeft;
+        private double _previousTop;
+
+        private void ToggleFullscreen()
+        {
+            if (_isFullscreen)
+            {
+                // Exit fullscreen
+                _isFullscreen = false;
+                MenuBar.Visibility = Visibility.Visible;
+                ControlsBar.Visibility = Visibility.Visible;
+                WindowStyle = WindowStyle.SingleBorderWindow;
+                ResizeMode = ResizeMode.CanResize;
+                Topmost = false;
+
+                WindowState = _previousWindowState;
+                if (_previousWindowState == WindowState.Normal)
+                {
+                    Width = _previousWidth;
+                    Height = _previousHeight;
+                    Left = _previousLeft;
+                    Top = _previousTop;
+                }
+            }
+            else
+            {
+                // Enter fullscreen
+                _isFullscreen = true;
+                _previousWindowState = WindowState;
+                _previousWidth = Width;
+                _previousHeight = Height;
+                _previousLeft = Left;
+                _previousTop = Top;
+
+                MenuBar.Visibility = Visibility.Collapsed;
+                ControlsBar.Visibility = Visibility.Collapsed;
+                WindowStyle = WindowStyle.None;
+                ResizeMode = ResizeMode.NoResize;
+                Topmost = true;
+
+                if (WindowState == WindowState.Maximized)
+                {
+                    WindowState = WindowState.Normal;
+                }
+
+                // Get the current monitor's working area using WPF
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                var screen = System.Windows.Forms.Screen.FromHandle(hwnd);
+
+                // Convert from device pixels to WPF units (DPI-aware)
+                var source = PresentationSource.FromVisual(this);
+                var dpiX = source?.CompositionTarget?.TransformFromDevice.M11 ?? 1.0;
+                var dpiY = source?.CompositionTarget?.TransformFromDevice.M22 ?? 1.0;
+
+                Left = screen.Bounds.Left * dpiX;
+                Top = screen.Bounds.Top * dpiY;
+                Width = screen.Bounds.Width * dpiX;
+                Height = screen.Bounds.Height * dpiY;
+            }
+        }
+
+        private void Window_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape && _isFullscreen)
+            {
+                ToggleFullscreen();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.F11)
+            {
+                ToggleFullscreen();
+                e.Handled = true;
+            }
+        }
+
+        private void VideoArea_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = DragDropEffects.None;
+
+            if (e.Data.GetDataPresent(DataFormats.Text))
+            {
+                var text = e.Data.GetData(DataFormats.Text) as string;
+                if (IsYouTubeUrl(text))
+                {
+                    e.Effects = DragDropEffects.Copy;
+                }
+            }
+            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+            {
+                var text = e.Data.GetData(DataFormats.UnicodeText) as string;
+                if (IsYouTubeUrl(text))
+                {
+                    e.Effects = DragDropEffects.Copy;
+                }
+            }
+
+            e.Handled = true;
+        }
+
+        private async void VideoArea_Drop(object sender, DragEventArgs e)
+        {
+            string url = null;
+
+            if (e.Data.GetDataPresent(DataFormats.Text))
+            {
+                url = e.Data.GetData(DataFormats.Text) as string;
+            }
+            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+            {
+                url = e.Data.GetData(DataFormats.UnicodeText) as string;
+            }
+
+            if (!string.IsNullOrEmpty(url))
+            {
+                url = ExtractYouTubeUrl(url);
+                if (!string.IsNullOrEmpty(url))
+                {
+                    await PlayYouTubeUrl(url);
+                }
+            }
+        }
+
+        private bool IsYouTubeUrl(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return text.Contains("youtube.com") || text.Contains("youtu.be");
+        }
+
+        private string ExtractYouTubeUrl(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+
+            // Match YouTube URLs
+            var pattern = @"(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[\w-]+";
+            var match = Regex.Match(text, pattern);
+
+            if (match.Success)
+            {
+                var url = match.Value;
+                if (!url.StartsWith("http"))
+                {
+                    url = "https://" + url;
+                }
+                return url;
+            }
+
+            return text.Trim();
         }
     }
 
