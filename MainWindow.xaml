@@ -26,11 +26,14 @@
         </Menu>
 
         <!-- Video Player -->
-        <Grid Grid.Row="1" Background="Black"
+        <Grid x:Name="VideoContainer" Grid.Row="1" Background="Black"
               AllowDrop="True"
               DragOver="VideoArea_DragOver"
-              Drop="VideoArea_Drop">
-            <vlc:VideoView x:Name="VideoView" Loaded="VideoView_Loaded"/>
+              Drop="VideoArea_Drop"
+              MouseLeftButtonDown="VideoArea_MouseLeftButtonDown">
+            <Border Background="Black">
+                <vlc:VideoView x:Name="VideoView" Loaded="VideoView_Loaded"/>
+            </Border>
 
             <!-- Loading/Status overlay -->
             <TextBlock x:Name="StatusText"
@@ -38,7 +41,8 @@
                        Foreground="Gray"
                        FontSize="18"
                        HorizontalAlignment="Center"
-                       VerticalAlignment="Center"/>
+                       VerticalAlignment="Center"
+                       IsHitTestVisible="False"/>
         </Grid>
 
         <!-- Controls -->

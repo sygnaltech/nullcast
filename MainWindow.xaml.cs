@@ -272,12 +272,7 @@ namespace VideoPlayer
 
         private void VideoView_Loaded(object sender, RoutedEventArgs e)
         {
-            // Hook into the VideoView's internal grid to capture mouse events
-            if (VideoView.Content is System.Windows.Controls.Grid grid)
-            {
-                grid.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
-                grid.Background = System.Windows.Media.Brushes.Transparent;
-            }
+            VideoView.Background = System.Windows.Media.Brushes.Black;
         }
 
         private bool _isFullscreen;
