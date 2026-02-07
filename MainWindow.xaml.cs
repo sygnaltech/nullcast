@@ -76,7 +76,15 @@ namespace VideoPlayer
             _mediaPlayer = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
 
             // Must set after the VideoView is loaded
-            Loaded += (s, e) => VideoView.MediaPlayer = _mediaPlayer;
+            Loaded += (s, e) =>
+            {
+                VideoView.MediaPlayer = _mediaPlayer;
+
+                // Pin to all virtual desktops
+                var hwnd = new WindowInteropHelper(this).Handle;
+                var pinned = VirtualDesktopPinner.PinWindow(hwnd);
+                Debug.WriteLine($"[VideoPlayer] Virtual desktop pin: {(pinned ? "success" : "failed")}, HWND: {hwnd}");
+            };
 
             _mediaPlayer.Playing += (s, e) => Dispatcher.Invoke(() =>
             {
