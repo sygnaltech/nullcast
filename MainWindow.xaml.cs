@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -7,10 +9,13 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
+using VideoPlayer.Models;
+using VideoPlayer.Services;
 
 namespace VideoPlayer
 {
@@ -49,7 +54,19 @@ namespace VideoPlayer
             (360,  "360p"),
         };
 
-        public ICommand OpenUrlCommand { get; }
+        // Playlist service
+        private PlaylistAuthService _auth;
+        private PlaylistApiService  _api;
+        private string              _activeMuid;
+        private int                 _positionSaveTick;
+        private long?               _seekOnPlay;         // ms to seek when Playing fires
+        private bool                _loadingWorkspaces;  // suppress SelectionChanged during load
+        private List<Workspace>     _workspaces = new();
+        private Workspace           _selectedWorkspace;
+
+        public ObservableCollection<Bookmark> PlaylistItems { get; } = new();
+
+        public ICommand OpenUrlCommand  { get; }
         public ICommand PlayPauseCommand { get; }
 
         public MainWindow()
@@ -60,7 +77,7 @@ namespace VideoPlayer
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             Title = $"Video Player v{v.Major}.{v.Minor}.{v.Build}";
 
-            OpenUrlCommand = new RelayCommand(_ => OpenUrl_Click(null, null));
+            OpenUrlCommand   = new RelayCommand(_ => OpenUrl_Click(null, null));
             PlayPauseCommand = new RelayCommand(_ => PlayPause_Click(null, null));
 
             InitializeVLC();
@@ -105,13 +122,13 @@ namespace VideoPlayer
             _mediaPlayer = new LibVLCSharp.Shared.MediaPlayer(_libVLC);
 
             // Must set after the VideoView is loaded
-            Loaded += (s, e) =>
+            Loaded += async (s, e) =>
             {
                 VideoView.MediaPlayer = _mediaPlayer;
 
                 // SetHwndBackground is still called as a belt-and-suspenders repaint once
                 // the layout pass completes and the HWND tree is stable.
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(SetHwndBackground));
+                _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(SetHwndBackground));
 
                 // Pin to all virtual desktops
                 var hwnd = new WindowInteropHelper(this).Handle;
@@ -133,13 +150,27 @@ namespace VideoPlayer
                     _pendingClick = false;
                     PlayPause_Click(null, null);
                 };
+
+                await InitializePlaylistAsync();
             };
 
-            _mediaPlayer.Playing += (s, e) => Dispatcher.InvokeAsync(() =>
+            _mediaPlayer.Playing += async (s, e) =>
             {
-                PlayPauseButton.Content = "⏸";
-                StatusText.Visibility = Visibility.Collapsed;
-            });
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    PlayPauseButton.Content = "⏸";
+                    StatusText.Visibility = Visibility.Collapsed;
+                });
+
+                if (_seekOnPlay.HasValue)
+                {
+                    var seekTo = _seekOnPlay.Value;
+                    _seekOnPlay = null;
+                    // Short delay to let VLC buffer before seeking
+                    await Task.Delay(500);
+                    _mediaPlayer.Time = seekTo;
+                }
+            };
 
             _mediaPlayer.Paused += (s, e) => Dispatcher.InvokeAsync(() =>
             {
@@ -155,8 +186,187 @@ namespace VideoPlayer
             _mediaPlayer.EndReached += (s, e) => Dispatcher.InvokeAsync(() =>
             {
                 PlayPauseButton.Content = "▶";
+
+                if (_activeMuid != null && _api != null)
+                {
+                    var muid    = _activeMuid;
+                    var seconds = (int)(_mediaPlayer.Length / 1000);
+                    _ = _api.SavePositionAsync(muid, seconds);
+
+                    if (_selectedWorkspace != null)
+                        _ = RefreshBookmarksAsync(_selectedWorkspace.Id);
+                }
             });
         }
+
+        // ──────────────────────────────────────────────────────
+        // Playlist initialisation
+        // ──────────────────────────────────────────────────────
+
+        private async Task InitializePlaylistAsync()
+        {
+            _auth = new PlaylistAuthService();
+            _api  = new PlaylistApiService(_auth);
+
+            var tokens = await _auth.LoadTokensAsync();
+            if (tokens != null && !string.IsNullOrEmpty(tokens.AccessToken))
+            {
+                UpdateLoginUI(tokens.DisplayName);
+                try
+                {
+                    await LoadPlaylistAsync();
+                }
+                catch (Exception ex)
+                {
+                    App.Log($"[Playlist] Startup load failed: {ex.Message}");
+                }
+            }
+        }
+
+        private async Task LoadPlaylistAsync()
+        {
+            _loadingWorkspaces = true;
+            try
+            {
+                _workspaces = await _api.GetWorkspacesAsync();
+                WorkspaceCombo.ItemsSource = _workspaces;
+                _selectedWorkspace = _workspaces.FirstOrDefault(w => w.IsDefault == 1)
+                                  ?? _workspaces.FirstOrDefault();
+                WorkspaceCombo.SelectedItem = _selectedWorkspace;
+            }
+            finally
+            {
+                _loadingWorkspaces = false;
+            }
+
+            if (_selectedWorkspace != null)
+                await RefreshBookmarksAsync(_selectedWorkspace.Id);
+
+            UpdatePlaylistVisibility();
+        }
+
+        private async Task RefreshBookmarksAsync(int workspaceId)
+        {
+            try
+            {
+                PlaylistErrorText.Visibility = Visibility.Collapsed;
+                var items = await _api.GetYouTubeBookmarksAsync(workspaceId);
+                PlaylistItems.Clear();
+                foreach (var bm in items)
+                    PlaylistItems.Add(bm);
+            }
+            catch (Exception ex)
+            {
+                PlaylistErrorText.Text = $"Could not load playlist: {ex.Message}";
+                PlaylistErrorText.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void UpdateLoginUI(string displayName)
+        {
+            if (!string.IsNullOrEmpty(displayName))
+            {
+                UserDisplayName.Text       = displayName;
+                UserDisplayName.Visibility = Visibility.Visible;
+                ConnectButton.Visibility   = Visibility.Collapsed;
+                SignOutButton.Visibility   = Visibility.Visible;
+            }
+            else
+            {
+                UserDisplayName.Visibility = Visibility.Collapsed;
+                ConnectButton.Visibility   = Visibility.Visible;
+                SignOutButton.Visibility   = Visibility.Collapsed;
+                PlaylistPanel.Visibility   = Visibility.Collapsed;
+            }
+        }
+
+        private void UpdatePlaylistVisibility()
+        {
+            PlaylistPanel.Visibility =
+                (_auth?.IsSignedIn == true && WindowState != WindowState.Maximized && !_isFullscreen)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Login / sign-out
+        // ──────────────────────────────────────────────────────
+
+        private async void Connect_Click(object sender, RoutedEventArgs e)
+        {
+            ConnectButton.IsEnabled = false;
+            try
+            {
+                var tokens = await _auth.LoginAsync();
+                UpdateLoginUI(tokens.DisplayName);
+                await LoadPlaylistAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Sign-in failed: {ex.Message}", "Playlist", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                ConnectButton.IsEnabled = true;
+            }
+        }
+
+        private async void SignOut_Click(object sender, RoutedEventArgs e)
+        {
+            await _auth.SignOutAsync();
+            PlaylistItems.Clear();
+            UpdateLoginUI(null);
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Workspace + playlist item interactions
+        // ──────────────────────────────────────────────────────
+
+        private async void WorkspaceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingWorkspaces) return;
+            if (WorkspaceCombo.SelectedItem is Workspace ws)
+            {
+                _selectedWorkspace = ws;
+                await RefreshBookmarksAsync(ws.Id);
+            }
+        }
+
+        private async void RefreshPlaylist_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedWorkspace != null)
+                await RefreshBookmarksAsync(_selectedWorkspace.Id);
+        }
+
+        private async void PlaylistBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count == 0 || _api == null) return;
+            if (PlaylistBox.SelectedItem is Bookmark bookmark)
+                await PlayBookmark(bookmark);
+        }
+
+        private async Task PlayBookmark(Bookmark bookmark)
+        {
+            _activeMuid        = bookmark.Muid;
+            _positionSaveTick  = 0;
+            _seekOnPlay        = null;
+
+            // Fetch the freshest position before starting
+            var fresh = await _api.GetBookmarkAsync(bookmark.Muid);
+            if (fresh?.Position is int pos && pos > 0)
+                _seekOnPlay = pos * 1000L;
+
+            await PlayYouTubeUrl(bookmark.Url);
+        }
+
+        private void Window_StateChanged(object sender, EventArgs e)
+        {
+            UpdatePlaylistVisibility();
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Timer
+        // ──────────────────────────────────────────────────────
 
         private void SetupTimer()
         {
@@ -174,12 +384,24 @@ namespace VideoPlayer
                 return;
 
             var length = _mediaPlayer.Length;
-            var time = _mediaPlayer.Time;
+            var time   = _mediaPlayer.Time;
 
             if (length > 0)
             {
                 ProgressSlider.Value = (time * 100.0) / length;
-                TimeDisplay.Text = $"{FormatTime(time)} / {FormatTime(length)}";
+                TimeDisplay.Text     = $"{FormatTime(time)} / {FormatTime(length)}";
+            }
+
+            // Save position every 10 seconds (20 × 500ms ticks)
+            if (_activeMuid != null && _api != null)
+            {
+                _positionSaveTick++;
+                if (_positionSaveTick >= 20)
+                {
+                    _positionSaveTick = 0;
+                    var seconds = (int)(time / 1000);
+                    _ = _api.SavePositionAsync(_activeMuid, seconds);
+                }
             }
         }
 
@@ -191,11 +413,17 @@ namespace VideoPlayer
                 : $"{ts.Minutes:D2}:{ts.Seconds:D2}";
         }
 
+        // ──────────────────────────────────────────────────────
+        // Playback
+        // ──────────────────────────────────────────────────────
+
         private async void OpenUrl_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenUrlDialog { Owner = this };
             if (dialog.ShowDialog() == true)
             {
+                _activeMuid = null;
+                _seekOnPlay = null;
                 await PlayYouTubeUrl(dialog.Url);
             }
         }
@@ -283,7 +511,7 @@ namespace VideoPlayer
 
             process.Start();
             var output = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
+            var error  = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
 
             if (process.ExitCode != 0 && !string.IsNullOrEmpty(error))
@@ -300,6 +528,12 @@ namespace VideoPlayer
 
             if (_mediaPlayer.IsPlaying)
             {
+                // Save position before pausing
+                if (_activeMuid != null && _api != null)
+                {
+                    var seconds = (int)(_mediaPlayer.Time / 1000);
+                    _ = _api.SavePositionAsync(_activeMuid, seconds);
+                }
                 _mediaPlayer.Pause();
             }
             else
@@ -339,11 +573,155 @@ namespace VideoPlayer
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             _timer?.Stop();
+
+            // Best-effort position save on close
+            if (_activeMuid != null && _api != null && _mediaPlayer?.IsPlaying == true)
+            {
+                var seconds = (int)(_mediaPlayer.Time / 1000);
+                _ = _api.SavePositionAsync(_activeMuid, seconds);
+            }
+
             _mediaPlayer?.Stop();
             _mediaPlayer?.Dispose();
             _currentMedia?.Dispose();
             _libVLC?.Dispose();
         }
+
+        // ──────────────────────────────────────────────────────
+        // Drag & drop
+        // ──────────────────────────────────────────────────────
+
+        private void VideoArea_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = DragDropEffects.None;
+
+            if (e.Data.GetDataPresent(DataFormats.Text))
+            {
+                var text = e.Data.GetData(DataFormats.Text) as string;
+                if (IsYouTubeUrl(text))
+                    e.Effects = DragDropEffects.Copy;
+            }
+            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+            {
+                var text = e.Data.GetData(DataFormats.UnicodeText) as string;
+                if (IsYouTubeUrl(text))
+                    e.Effects = DragDropEffects.Copy;
+            }
+
+            e.Handled = true;
+        }
+
+        private async void VideoArea_Drop(object sender, DragEventArgs e)
+        {
+            string url = null;
+
+            if (e.Data.GetDataPresent(DataFormats.Text))
+                url = e.Data.GetData(DataFormats.Text) as string;
+            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+                url = e.Data.GetData(DataFormats.UnicodeText) as string;
+
+            if (!string.IsNullOrEmpty(url))
+            {
+                url = ExtractYouTubeUrl(url);
+                if (!string.IsNullOrEmpty(url))
+                {
+                    // Play only — do not add to playlist regardless of sign-in state
+                    _activeMuid = null;
+                    _seekOnPlay = null;
+                    await PlayYouTubeUrl(url);
+                }
+            }
+        }
+
+        private void PlaylistArea_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = DragDropEffects.None;
+
+            if (_auth?.IsSignedIn != true)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Data.GetDataPresent(DataFormats.Text))
+            {
+                var text = e.Data.GetData(DataFormats.Text) as string;
+                if (IsYouTubeUrl(text))
+                    e.Effects = DragDropEffects.Copy;
+            }
+            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+            {
+                var text = e.Data.GetData(DataFormats.UnicodeText) as string;
+                if (IsYouTubeUrl(text))
+                    e.Effects = DragDropEffects.Copy;
+            }
+
+            e.Handled = true;
+        }
+
+        private async void PlaylistArea_Drop(object sender, DragEventArgs e)
+        {
+            if (_auth?.IsSignedIn != true || _selectedWorkspace == null) return;
+
+            string url = null;
+            if (e.Data.GetDataPresent(DataFormats.Text))
+                url = e.Data.GetData(DataFormats.Text) as string;
+            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+                url = e.Data.GetData(DataFormats.UnicodeText) as string;
+
+            if (string.IsNullOrEmpty(url)) return;
+            url = ExtractYouTubeUrl(url);
+            if (string.IsNullOrEmpty(url)) return;
+
+            try
+            {
+                var bookmark = await _api.CreateBookmarkAsync(url, _selectedWorkspace.Id);
+                if (bookmark != null)
+                {
+                    PlaylistItems.Add(bookmark);
+
+                    if (!_mediaPlayer.IsPlaying)
+                    {
+                        // Nothing playing — add and immediately play
+                        await PlayBookmark(bookmark);
+                    }
+                    // Else: added to list only, current video continues
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not add to playlist: {ex.Message}",
+                    "Playlist", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private bool IsYouTubeUrl(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return text.Contains("youtube.com") || text.Contains("youtu.be");
+        }
+
+        private string ExtractYouTubeUrl(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+
+            var pattern = @"(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[\w-]+";
+            var match   = Regex.Match(text, pattern);
+
+            if (match.Success)
+            {
+                var url = match.Value;
+                if (!url.StartsWith("http"))
+                    url = "https://" + url;
+                return url;
+            }
+
+            return text.Trim();
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Win32 HWND hook
+        // ──────────────────────────────────────────────────────
 
         private IntPtr VideoHwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
@@ -398,7 +776,7 @@ namespace VideoPlayer
         private void ShowQualityMenu()
         {
             GetCursorPos(out var pt);
-            var hwnd = new WindowInteropHelper(this).Handle;
+            var hwnd  = new WindowInteropHelper(this).Handle;
             var hMenu = CreatePopupMenu();
             try
             {
@@ -419,6 +797,7 @@ namespace VideoPlayer
                 if (cmd >= 1 && cmd <= (uint)QualityLevels.Length)
                 {
                     _selectedHeight = QualityLevels[cmd - 1].Height;
+                    _seekOnPlay     = null; // Don't seek to saved position on quality change
                     if (!string.IsNullOrEmpty(_currentUrl))
                         _ = PlayYouTubeUrl(_currentUrl);
                 }
@@ -451,6 +830,105 @@ namespace VideoPlayer
             // Note: SetHwndBackground() is NOT called here — the HwndHost doesn't exist yet
             // because MediaPlayer hasn't been assigned.  It's called from the Loaded handler.
         }
+
+        // ──────────────────────────────────────────────────────
+        // Fullscreen
+        // ──────────────────────────────────────────────────────
+
+        private bool _isFullscreen;
+        private WindowState _previousWindowState;
+        private double _previousWidth;
+        private double _previousHeight;
+        private double _previousLeft;
+        private double _previousTop;
+
+        private void ToggleFullscreen()
+        {
+            if (_isFullscreen)
+            {
+                // Exit fullscreen
+                _isFullscreen = false;
+                TopBar.Visibility      = Visibility.Visible;
+                ControlsBar.Visibility = Visibility.Visible;
+                WindowStyle = WindowStyle.SingleBorderWindow;
+                ResizeMode  = ResizeMode.CanResize;
+                Topmost     = false;
+
+                WindowState = _previousWindowState;
+                if (_previousWindowState == WindowState.Normal)
+                {
+                    Width  = _previousWidth;
+                    Height = _previousHeight;
+                    Left   = _previousLeft;
+                    Top    = _previousTop;
+                }
+
+                UpdatePlaylistVisibility();
+            }
+            else
+            {
+                // Enter fullscreen
+                _isFullscreen        = true;
+                _previousWindowState = WindowState;
+                _previousWidth       = Width;
+                _previousHeight      = Height;
+                _previousLeft        = Left;
+                _previousTop         = Top;
+
+                TopBar.Visibility      = Visibility.Collapsed;
+                ControlsBar.Visibility = Visibility.Collapsed;
+                UpdatePlaylistVisibility(); // hides playlist panel
+
+                WindowStyle = WindowStyle.None;
+                ResizeMode  = ResizeMode.NoResize;
+                Topmost     = true;
+
+                if (WindowState == WindowState.Maximized)
+                    WindowState = WindowState.Normal;
+
+                // Get the current monitor's working area using WPF
+                var hwnd   = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                var screen = System.Windows.Forms.Screen.FromHandle(hwnd);
+
+                // Convert from device pixels to WPF units (DPI-aware)
+                var source = PresentationSource.FromVisual(this);
+                var dpiX   = source?.CompositionTarget?.TransformFromDevice.M11 ?? 1.0;
+                var dpiY   = source?.CompositionTarget?.TransformFromDevice.M22 ?? 1.0;
+
+                Left   = screen.Bounds.Left  * dpiX;
+                Top    = screen.Bounds.Top   * dpiY;
+                Width  = screen.Bounds.Width * dpiX;
+                Height = screen.Bounds.Height * dpiY;
+            }
+        }
+
+        private void Window_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape && _isFullscreen)
+            {
+                ToggleFullscreen();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.F11)
+            {
+                ToggleFullscreen();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Right || e.Key == Key.Left)
+            {
+                if (_mediaPlayer != null && _mediaPlayer.Length > 0)
+                {
+                    var delta   = (e.KeyboardDevice.Modifiers == ModifierKeys.Control ? 60 : 10) * 1000L;
+                    var newTime = _mediaPlayer.Time + (e.Key == Key.Right ? delta : -delta);
+                    _mediaPlayer.Time = Math.Clamp(newTime, 0, _mediaPlayer.Length);
+                }
+                e.Handled = true;
+            }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Win32 P/Invokes
+        // ──────────────────────────────────────────────────────
 
         [DllImport("user32.dll")]
         private static extern IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
@@ -540,169 +1018,6 @@ namespace VideoPlayer
             }
             return null;
         }
-
-        private bool _isFullscreen;
-        private WindowState _previousWindowState;
-        private double _previousWidth;
-        private double _previousHeight;
-        private double _previousLeft;
-        private double _previousTop;
-
-        private void ToggleFullscreen()
-        {
-            if (_isFullscreen)
-            {
-                // Exit fullscreen
-                _isFullscreen = false;
-                MenuBar.Visibility = Visibility.Visible;
-                ControlsBar.Visibility = Visibility.Visible;
-                WindowStyle = WindowStyle.SingleBorderWindow;
-                ResizeMode = ResizeMode.CanResize;
-                Topmost = false;
-
-                WindowState = _previousWindowState;
-                if (_previousWindowState == WindowState.Normal)
-                {
-                    Width = _previousWidth;
-                    Height = _previousHeight;
-                    Left = _previousLeft;
-                    Top = _previousTop;
-                }
-            }
-            else
-            {
-                // Enter fullscreen
-                _isFullscreen = true;
-                _previousWindowState = WindowState;
-                _previousWidth = Width;
-                _previousHeight = Height;
-                _previousLeft = Left;
-                _previousTop = Top;
-
-                MenuBar.Visibility = Visibility.Collapsed;
-                ControlsBar.Visibility = Visibility.Collapsed;
-                WindowStyle = WindowStyle.None;
-                ResizeMode = ResizeMode.NoResize;
-                Topmost = true;
-
-                if (WindowState == WindowState.Maximized)
-                {
-                    WindowState = WindowState.Normal;
-                }
-
-                // Get the current monitor's working area using WPF
-                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-                var screen = System.Windows.Forms.Screen.FromHandle(hwnd);
-
-                // Convert from device pixels to WPF units (DPI-aware)
-                var source = PresentationSource.FromVisual(this);
-                var dpiX = source?.CompositionTarget?.TransformFromDevice.M11 ?? 1.0;
-                var dpiY = source?.CompositionTarget?.TransformFromDevice.M22 ?? 1.0;
-
-                Left = screen.Bounds.Left * dpiX;
-                Top = screen.Bounds.Top * dpiY;
-                Width = screen.Bounds.Width * dpiX;
-                Height = screen.Bounds.Height * dpiY;
-            }
-        }
-
-        private void Window_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Escape && _isFullscreen)
-            {
-                ToggleFullscreen();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.F11)
-            {
-                ToggleFullscreen();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Right || e.Key == Key.Left)
-            {
-                if (_mediaPlayer != null && _mediaPlayer.Length > 0)
-                {
-                    var delta = (e.KeyboardDevice.Modifiers == ModifierKeys.Control ? 60 : 10) * 1000L;
-                    var newTime = _mediaPlayer.Time + (e.Key == Key.Right ? delta : -delta);
-                    _mediaPlayer.Time = Math.Clamp(newTime, 0, _mediaPlayer.Length);
-                }
-                e.Handled = true;
-            }
-        }
-
-        private void VideoArea_DragOver(object sender, DragEventArgs e)
-        {
-            e.Effects = DragDropEffects.None;
-
-            if (e.Data.GetDataPresent(DataFormats.Text))
-            {
-                var text = e.Data.GetData(DataFormats.Text) as string;
-                if (IsYouTubeUrl(text))
-                {
-                    e.Effects = DragDropEffects.Copy;
-                }
-            }
-            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
-            {
-                var text = e.Data.GetData(DataFormats.UnicodeText) as string;
-                if (IsYouTubeUrl(text))
-                {
-                    e.Effects = DragDropEffects.Copy;
-                }
-            }
-
-            e.Handled = true;
-        }
-
-        private async void VideoArea_Drop(object sender, DragEventArgs e)
-        {
-            string url = null;
-
-            if (e.Data.GetDataPresent(DataFormats.Text))
-            {
-                url = e.Data.GetData(DataFormats.Text) as string;
-            }
-            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
-            {
-                url = e.Data.GetData(DataFormats.UnicodeText) as string;
-            }
-
-            if (!string.IsNullOrEmpty(url))
-            {
-                url = ExtractYouTubeUrl(url);
-                if (!string.IsNullOrEmpty(url))
-                {
-                    await PlayYouTubeUrl(url);
-                }
-            }
-        }
-
-        private bool IsYouTubeUrl(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return false;
-            return text.Contains("youtube.com") || text.Contains("youtu.be");
-        }
-
-        private string ExtractYouTubeUrl(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return null;
-
-            // Match YouTube URLs
-            var pattern = @"(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[\w-]+";
-            var match = Regex.Match(text, pattern);
-
-            if (match.Success)
-            {
-                var url = match.Value;
-                if (!url.StartsWith("http"))
-                {
-                    url = "https://" + url;
-                }
-                return url;
-            }
-
-            return text.Trim();
-        }
     }
 
     public class RelayCommand : ICommand
@@ -712,17 +1027,17 @@ namespace VideoPlayer
 
         public RelayCommand(Action<object> execute, Func<object, bool> canExecute = null)
         {
-            _execute = execute;
+            _execute    = execute;
             _canExecute = canExecute;
         }
 
         public event EventHandler CanExecuteChanged
         {
-            add => CommandManager.RequerySuggested += value;
+            add    => CommandManager.RequerySuggested += value;
             remove => CommandManager.RequerySuggested -= value;
         }
 
         public bool CanExecute(object parameter) => _canExecute?.Invoke(parameter) ?? true;
-        public void Execute(object parameter) => _execute(parameter);
+        public void Execute(object parameter)    => _execute(parameter);
     }
 }
