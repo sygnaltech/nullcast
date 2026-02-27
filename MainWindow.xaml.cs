@@ -24,6 +24,16 @@ namespace VideoPlayer
         private string _ytdlpPath;
         private bool _ytdlpReady;
 
+        // Win32 click detection on the native LibVLC HWND
+        private const int WM_PARENTNOTIFY = 0x0210;
+        private const int WM_LBUTTONDOWN  = 0x0201;
+        private const int WM_LBUTTONDBLCLK = 0x0203;
+        private DispatcherTimer _clickTimer;
+        private bool _pendingClick;
+
+        [DllImport("user32.dll")]
+        private static extern uint GetDoubleClickTime();
+
         public ICommand OpenUrlCommand { get; }
         public ICommand PlayPauseCommand { get; }
 
@@ -85,6 +95,22 @@ namespace VideoPlayer
                 var hwnd = new WindowInteropHelper(this).Handle;
                 var pinned = VirtualDesktopPinner.PinWindow(hwnd);
                 App.Log($"[VideoPlayer] Virtual desktop pin: {(pinned ? "success" : "failed")}, HWND: {hwnd}");
+
+                // Hook Win32 messages to detect clicks on the native LibVLC child HWND.
+                // WPF mouse events don't fire over HwndHost — WM_PARENTNOTIFY is the reliable path.
+                HwndSource.FromHwnd(hwnd)?.AddHook(VideoHwndHook);
+
+                // Timer to distinguish a single click from the first beat of a double-click.
+                _clickTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(GetDoubleClickTime())
+                };
+                _clickTimer.Tick += (ts, te) =>
+                {
+                    _clickTimer.Stop();
+                    _pendingClick = false;
+                    PlayPause_Click(null, null);
+                };
             };
 
             _mediaPlayer.Playing += (s, e) => Dispatcher.InvokeAsync(() =>
@@ -287,8 +313,42 @@ namespace VideoPlayer
             _libVLC?.Dispose();
         }
 
+        private IntPtr VideoHwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == WM_PARENTNOTIFY)
+            {
+                var eventCode = wParam.ToInt32() & 0xFFFF;
+
+                if (eventCode == WM_LBUTTONDBLCLK)
+                {
+                    // CS_DBLCLKS window: Windows detected the double-click itself
+                    _clickTimer?.Stop();
+                    _pendingClick = false;
+                    ToggleFullscreen();
+                }
+                else if (eventCode == WM_LBUTTONDOWN)
+                {
+                    if (_pendingClick)
+                    {
+                        // Non-CS_DBLCLKS window: two WM_LBUTTONDOWN within double-click time
+                        _clickTimer.Stop();
+                        _pendingClick = false;
+                        ToggleFullscreen();
+                    }
+                    else
+                    {
+                        _pendingClick = true;
+                        _clickTimer.Start();
+                    }
+                }
+            }
+            return IntPtr.Zero;
+        }
+
         private void VideoArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            // Fallback for WPF-visible clicks (e.g. no video loaded, HwndHost not active).
+            // Clicks over the native LibVLC HWND are handled by VideoHwndHook instead.
             if (e.ClickCount == 2)
             {
                 ToggleFullscreen();

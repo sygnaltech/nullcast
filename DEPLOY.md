@@ -6,7 +6,11 @@ dotnet build -c Release
 ```
 
 
+To run:
 
+F5 — builds and launches with the debugger attached (you'll see breakpoints, exceptions, etc.)
+Ctrl+F5 — builds and runs without debugger (faster)
+Ctrl+Shift+B — build only
 
 
 

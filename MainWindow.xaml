@@ -31,12 +31,11 @@
                 <vlc:VideoView x:Name="VideoView" Loaded="VideoView_Loaded"/>
             </Border>
 
-            <!-- Transparent overlay — captures mouse/drag events that the native HwndHost swallows -->
+            <!-- Transparent overlay — captures drag/drop events (clicks handled via WM_PARENTNOTIFY hook) -->
             <Grid Background="Transparent"
                   AllowDrop="True"
                   DragOver="VideoArea_DragOver"
-                  Drop="VideoArea_Drop"
-                  MouseLeftButtonDown="VideoArea_MouseLeftButtonDown"/>
+                  Drop="VideoArea_Drop"/>
 
             <!-- Loading/Status overlay -->
             <TextBlock x:Name="StatusText"
