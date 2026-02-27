@@ -470,11 +470,20 @@ namespace VideoPlayer
         [DllImport("user32.dll")]
         private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
 
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
         private const int  GCL_HBRBACKGROUND = -10;
         private const uint RDW_INVALIDATE    = 0x0001;
         private const uint RDW_ERASE         = 0x0004;
         private const uint RDW_ALLCHILDREN   = 0x0080;
         private const uint RDW_UPDATENOW     = 0x0100;
+        private const uint SWP_NOMOVE        = 0x0002;
+        private const uint SWP_NOZORDER      = 0x0004;
+        private const uint SWP_NOACTIVATE    = 0x0010;
 
         // Win32 native popup menu (avoids WPF ContextMenu focus issues over native HWNDs)
         private const uint MF_STRING    = 0x0000;
@@ -495,30 +504,21 @@ namespace VideoPlayer
         [StructLayout(LayoutKind.Sequential)]
         private struct POINT { public int X, Y; }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int Left, Top, Right, Bottom; }
+
         private void SetHwndBackground()
         {
             try
             {
-                var hwndHost = FindVisualChild<HwndHost>(VideoView);
-                if (hwndHost != null && hwndHost.Handle != IntPtr.Zero)
-                {
-                    var hwnd = hwndHost.Handle;
-                    // Paint H1 (the HwndHost container) black
-                    var blackBrush = CreateSolidBrush(0x00000000);
-                    SetClassLongPtr(hwnd, GCL_HBRBACKGROUND, blackBrush);
-                    // RDW_ALLCHILDREN ensures VLC's rendering child window (H2) is also
-                    // repainted — H2 sits on top of H1 and is the actual visible surface.
-                    RedrawWindow(hwnd, IntPtr.Zero, IntPtr.Zero,
-                        RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
-                }
-                else
-                {
-                    // HwndHost not found via visual tree — fall back to repainting all child
-                    // windows of the main HWND (VLC's window will be among them).
-                    var mainHwnd = new WindowInteropHelper(this).Handle;
-                    RedrawWindow(mainHwnd, IntPtr.Zero, IntPtr.Zero,
-                        RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
-                }
+                // VLC only re-renders its idle frame in response to WM_SIZE, not WM_PAINT.
+                // Resize by 1 device pixel and immediately restore — same trigger as
+                // moving the window between monitors, which is known to fix the white flash.
+                var hwnd = new WindowInteropHelper(this).Handle;
+                GetWindowRect(hwnd, out RECT r);
+                int w = r.Right - r.Left, h = r.Bottom - r.Top;
+                SetWindowPos(hwnd, IntPtr.Zero, 0, 0, w, h + 1, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+                SetWindowPos(hwnd, IntPtr.Zero, 0, 0, w, h,     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
             catch
             {
