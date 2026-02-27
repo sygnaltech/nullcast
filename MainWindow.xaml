@@ -26,14 +26,17 @@
         </Menu>
 
         <!-- Video Player -->
-        <Grid x:Name="VideoContainer" Grid.Row="1" Background="Black"
-              AllowDrop="True"
-              DragOver="VideoArea_DragOver"
-              Drop="VideoArea_Drop"
-              MouseLeftButtonDown="VideoArea_MouseLeftButtonDown">
+        <Grid x:Name="VideoContainer" Grid.Row="1" Background="Black">
             <Border Background="Black">
                 <vlc:VideoView x:Name="VideoView" Loaded="VideoView_Loaded"/>
             </Border>
+
+            <!-- Transparent overlay — captures mouse/drag events that the native HwndHost swallows -->
+            <Grid Background="Transparent"
+                  AllowDrop="True"
+                  DragOver="VideoArea_DragOver"
+                  Drop="VideoArea_Drop"
+                  MouseLeftButtonDown="VideoArea_MouseLeftButtonDown"/>
 
             <!-- Loading/Status overlay -->
             <TextBlock x:Name="StatusText"
@@ -95,6 +98,7 @@
                         Minimum="0"
                         Maximum="100"
                         Value="100"
+                        IsMoveToPointEnabled="True"
                         ValueChanged="VolumeSlider_ValueChanged"/>
             </StackPanel>
         </Grid>

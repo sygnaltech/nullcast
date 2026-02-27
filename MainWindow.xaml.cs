@@ -294,6 +294,11 @@ namespace VideoPlayer
                 ToggleFullscreen();
                 e.Handled = true;
             }
+            else if (e.ClickCount == 1)
+            {
+                PlayPause_Click(null, null);
+                e.Handled = true;
+            }
         }
 
         private void VideoView_Loaded(object sender, RoutedEventArgs e)
@@ -432,6 +437,16 @@ namespace VideoPlayer
             else if (e.Key == Key.F11)
             {
                 ToggleFullscreen();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Right || e.Key == Key.Left)
+            {
+                if (_mediaPlayer != null && _mediaPlayer.Length > 0)
+                {
+                    var delta = (e.KeyboardDevice.Modifiers == ModifierKeys.Control ? 60 : 10) * 1000L;
+                    var newTime = _mediaPlayer.Time + (e.Key == Key.Right ? delta : -delta);
+                    _mediaPlayer.Time = Math.Clamp(newTime, 0, _mediaPlayer.Length);
+                }
                 e.Handled = true;
             }
         }
