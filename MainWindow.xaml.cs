@@ -18,6 +18,7 @@ namespace VideoPlayer
     {
         private LibVLC _libVLC;
         private LibVLCSharp.Shared.MediaPlayer _mediaPlayer;
+        private Media _currentMedia;
         private bool _isDraggingSlider;
         private DispatcherTimer _timer;
         private string _ytdlpPath;
@@ -83,27 +84,27 @@ namespace VideoPlayer
                 // Pin to all virtual desktops
                 var hwnd = new WindowInteropHelper(this).Handle;
                 var pinned = VirtualDesktopPinner.PinWindow(hwnd);
-                Debug.WriteLine($"[VideoPlayer] Virtual desktop pin: {(pinned ? "success" : "failed")}, HWND: {hwnd}");
+                App.Log($"[VideoPlayer] Virtual desktop pin: {(pinned ? "success" : "failed")}, HWND: {hwnd}");
             };
 
-            _mediaPlayer.Playing += (s, e) => Dispatcher.Invoke(() =>
+            _mediaPlayer.Playing += (s, e) => Dispatcher.InvokeAsync(() =>
             {
                 PlayPauseButton.Content = "⏸";
                 StatusText.Visibility = Visibility.Collapsed;
             });
 
-            _mediaPlayer.Paused += (s, e) => Dispatcher.Invoke(() =>
+            _mediaPlayer.Paused += (s, e) => Dispatcher.InvokeAsync(() =>
             {
                 PlayPauseButton.Content = "▶";
             });
 
-            _mediaPlayer.Stopped += (s, e) => Dispatcher.Invoke(() =>
+            _mediaPlayer.Stopped += (s, e) => Dispatcher.InvokeAsync(() =>
             {
                 PlayPauseButton.Content = "▶";
                 ProgressSlider.Value = 0;
             });
 
-            _mediaPlayer.EndReached += (s, e) => Dispatcher.Invoke(() =>
+            _mediaPlayer.EndReached += (s, e) => Dispatcher.InvokeAsync(() =>
             {
                 PlayPauseButton.Content = "▶";
             });
@@ -158,7 +159,18 @@ namespace VideoPlayer
                 StatusText.Text = "Loading video...";
                 StatusText.Visibility = Visibility.Visible;
 
-                _mediaPlayer.Stop();
+                // Stop the player and wait for it to reach a clean stopped state
+                App.Log($"[VLC] Stop requested. State={_mediaPlayer.State} IsPlaying={_mediaPlayer.IsPlaying}");
+                // Stop() must run off the UI thread — calling it from the UI thread blocks the Win32
+                // message pump, which LibVLC needs to finish its cleanup, causing a deadlock.
+                App.Log("[VLC] Stopping off UI thread...");
+                await Task.Run(() => _mediaPlayer.Stop());
+                App.Log("[VLC] Stop() returned");
+
+                App.Log("[VLC] Disposing old media");
+                _currentMedia?.Dispose();
+                _currentMedia = null;
+                App.Log("[VLC] Old media disposed");
 
                 if (!_ytdlpReady)
                 {
@@ -182,8 +194,11 @@ namespace VideoPlayer
                     throw new Exception("Could not get stream URL");
                 }
 
-                var media = new Media(_libVLC, new Uri(streamUrl.Trim()));
-                _mediaPlayer.Play(media);
+                App.Log($"[VLC] Creating new Media. Player state={_mediaPlayer.State}");
+                _currentMedia = new Media(_libVLC, new Uri(streamUrl.Trim()));
+                App.Log("[VLC] Calling Play()");
+                _mediaPlayer.Play(_currentMedia);
+                App.Log("[VLC] Play() returned");
             }
             catch (Exception ex)
             {
@@ -268,6 +283,7 @@ namespace VideoPlayer
             _timer?.Stop();
             _mediaPlayer?.Stop();
             _mediaPlayer?.Dispose();
+            _currentMedia?.Dispose();
             _libVLC?.Dispose();
         }
 

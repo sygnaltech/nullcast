@@ -3,8 +3,9 @@
     "allow": [
       "Bash(dotnet list package:*)",
       "Bash(dotnet restore:*)",
-      "Bash(dotnet build:*)"
+      "Bash(dotnet build:*)",
+      "mcp__havoc__*"
     ]
-  }, 
+  },
   "enableAllProjectMcpServers": true
 }
