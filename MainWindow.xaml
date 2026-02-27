@@ -3,11 +3,119 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         Title="Video Player"
+        Icon="VideoPlayer.ico"
         Height="600" Width="900"
         WindowState="Normal"
         Background="Black"
         Closing="Window_Closing"
         KeyDown="Window_KeyDown">
+
+    <Window.Resources>
+        <!-- System color overrides for dark theme -->
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}"          Color="#1a1a1a"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBarBrushKey}"        Color="#333333"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}"       Color="#ffffff"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"      Color="#4a4a4a"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"  Color="#ffffff"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}"       Color="#888888"/>
+
+        <!-- Full ControlTemplate — system color overrides alone aren't reliable on Windows 11
+             for the dropdown popup container, so we own the entire visual tree here. -->
+        <Style TargetType="{x:Type MenuItem}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <!-- Icon area — hidden by default; shown in submenus for text indent -->
+                                <ContentPresenter x:Name="IconContent"
+                                                 Grid.Column="0"
+                                                 Width="22" Margin="3,0"
+                                                 ContentSource="Icon"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="Collapsed"/>
+                                <!-- Header text -->
+                                <ContentPresenter Grid.Column="1"
+                                                 ContentSource="Header"
+                                                 RecognizesAccessKey="True"
+                                                 Margin="8,4"
+                                                 VerticalAlignment="Center"/>
+                                <!-- Keyboard shortcut label -->
+                                <TextBlock x:Name="GestureText"
+                                          Grid.Column="2"
+                                          Text="{TemplateBinding InputGestureText}"
+                                          Margin="20,4,8,4"
+                                          Foreground="#888888"
+                                          VerticalAlignment="Center"/>
+                                <!-- Dropdown popup with explicit opaque background -->
+                                <Popup x:Name="PART_Popup"
+                                       Grid.Column="0" Grid.ColumnSpan="3"
+                                       Placement="Bottom"
+                                       HorizontalOffset="-1"
+                                       IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                       AllowsTransparency="False"
+                                       Focusable="False">
+                                    <Border Background="#1a1a1a"
+                                            BorderBrush="#555555"
+                                            BorderThickness="1"
+                                            SnapsToDevicePixels="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Role" Value="TopLevelHeader">
+                                <Setter TargetName="GestureText" Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                            <Trigger Property="Role" Value="TopLevelItem">
+                                <Setter TargetName="GestureText" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="PART_Popup"  Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                            <Trigger Property="Role" Value="SubmenuItem">
+                                <Setter TargetName="PART_Popup"  Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="IconContent" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="Role" Value="SubmenuHeader">
+                                <Setter TargetName="PART_Popup"  Property="Placement"  Value="Right"/>
+                                <Setter TargetName="IconContent" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#4a4a4a"/>
+                            </Trigger>
+                            <Trigger Property="IsSubmenuOpen" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#4a4a4a"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#666666"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type Separator}">
+            <Setter Property="Background" Value="#444444"/>
+            <Setter Property="Margin"     Value="0,2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Separator}">
+                        <Border Height="1" Background="{TemplateBinding Background}" Margin="{TemplateBinding Margin}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>

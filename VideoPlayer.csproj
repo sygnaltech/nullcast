@@ -7,7 +7,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>VideoPlayer</RootNamespace>
     <AssemblyName>VideoPlayer</AssemblyName>
+    <ApplicationIcon>VideoPlayer.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="VideoPlayer.ico"/>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.9.5" />
