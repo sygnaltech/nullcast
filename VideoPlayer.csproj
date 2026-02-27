@@ -8,6 +8,7 @@
     <RootNamespace>VideoPlayer</RootNamespace>
     <AssemblyName>VideoPlayer</AssemblyName>
     <ApplicationIcon>VideoPlayer.ico</ApplicationIcon>
+    <Version>0.2.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

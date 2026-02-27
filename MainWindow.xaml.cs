@@ -26,6 +26,7 @@ namespace VideoPlayer
 
         // Win32 click detection on the native LibVLC HWND
         private const int WM_PARENTNOTIFY  = 0x0210;
+        private const int WM_CREATE        = 0x0001;
         private const int WM_LBUTTONDOWN   = 0x0201;
         private const int WM_LBUTTONDBLCLK = 0x0203;
         private const int WM_RBUTTONDOWN   = 0x0204;
@@ -55,6 +56,9 @@ namespace VideoPlayer
         {
             InitializeComponent();
             DataContext = this;
+
+            var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            Title = $"Video Player v{v.Major}.{v.Minor}.{v.Build}";
 
             OpenUrlCommand = new RelayCommand(_ => OpenUrl_Click(null, null));
             PlayPauseCommand = new RelayCommand(_ => PlayPause_Click(null, null));
@@ -104,6 +108,10 @@ namespace VideoPlayer
             Loaded += (s, e) =>
             {
                 VideoView.MediaPlayer = _mediaPlayer;
+
+                // SetHwndBackground is still called as a belt-and-suspenders repaint once
+                // the layout pass completes and the HWND tree is stable.
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(SetHwndBackground));
 
                 // Pin to all virtual desktops
                 var hwnd = new WindowInteropHelper(this).Handle;
@@ -234,7 +242,7 @@ namespace VideoPlayer
                 var audioUrl = audioTask.Result?.Trim();
 
                 if (!string.IsNullOrEmpty(title))
-                    Title = $"Video Player - {title}";
+                    Title = $"Video Player v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3)} - {title}";
 
                 if (string.IsNullOrEmpty(videoUrl))
                     throw new Exception("Could not get stream URL");
@@ -343,7 +351,20 @@ namespace VideoPlayer
             {
                 var eventCode = wParam.ToInt32() & 0xFFFF;
 
-                if (eventCode == WM_LBUTTONDBLCLK)
+                if (eventCode == WM_CREATE)
+                {
+                    // A Win32 child window is being created (VLC's rendering HWND).
+                    // WM_PARENTNOTIFY(WM_CREATE) fires BEFORE the window receives its first
+                    // WM_ERASEBKGND, so setting the class brush here paints the initial
+                    // erase black instead of the default white — no flash at all.
+                    var childHwnd = lParam;
+                    if (childHwnd != IntPtr.Zero)
+                    {
+                        var blackBrush = CreateSolidBrush(0x00000000);
+                        SetClassLongPtr(childHwnd, GCL_HBRBACKGROUND, blackBrush);
+                    }
+                }
+                else if (eventCode == WM_LBUTTONDBLCLK)
                 {
                     // CS_DBLCLKS window: Windows detected the double-click itself
                     _clickTimer?.Stop();
@@ -427,9 +448,8 @@ namespace VideoPlayer
         private void VideoView_Loaded(object sender, RoutedEventArgs e)
         {
             VideoView.Background = System.Windows.Media.Brushes.Black;
-
-            // Find the HwndHost inside VideoView and set its background
-            SetHwndBackground();
+            // Note: SetHwndBackground() is NOT called here — the HwndHost doesn't exist yet
+            // because MediaPlayer hasn't been assigned.  It's called from the Loaded handler.
         }
 
         [DllImport("user32.dll")]
@@ -444,7 +464,17 @@ namespace VideoPlayer
         [DllImport("user32.dll")]
         private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
 
-        private const int GCL_HBRBACKGROUND = -10;
+        [DllImport("user32.dll")]
+        private static extern bool UpdateWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
+
+        private const int  GCL_HBRBACKGROUND = -10;
+        private const uint RDW_INVALIDATE    = 0x0001;
+        private const uint RDW_ERASE         = 0x0004;
+        private const uint RDW_ALLCHILDREN   = 0x0080;
+        private const uint RDW_UPDATENOW     = 0x0100;
 
         // Win32 native popup menu (avoids WPF ContextMenu focus issues over native HWNDs)
         private const uint MF_STRING    = 0x0000;
@@ -469,23 +499,30 @@ namespace VideoPlayer
         {
             try
             {
-                // Find the HwndHost in the visual tree
                 var hwndHost = FindVisualChild<HwndHost>(VideoView);
-                if (hwndHost != null)
+                if (hwndHost != null && hwndHost.Handle != IntPtr.Zero)
                 {
                     var hwnd = hwndHost.Handle;
-                    if (hwnd != IntPtr.Zero)
-                    {
-                        // Create a black brush and set it as the window class background
-                        var blackBrush = CreateSolidBrush(0x00000000); // RGB(0,0,0)
-                        SetClassLongPtr(hwnd, GCL_HBRBACKGROUND, blackBrush);
-                        InvalidateRect(hwnd, IntPtr.Zero, true);
-                    }
+                    // Paint H1 (the HwndHost container) black
+                    var blackBrush = CreateSolidBrush(0x00000000);
+                    SetClassLongPtr(hwnd, GCL_HBRBACKGROUND, blackBrush);
+                    // RDW_ALLCHILDREN ensures VLC's rendering child window (H2) is also
+                    // repainted — H2 sits on top of H1 and is the actual visible surface.
+                    RedrawWindow(hwnd, IntPtr.Zero, IntPtr.Zero,
+                        RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                }
+                else
+                {
+                    // HwndHost not found via visual tree — fall back to repainting all child
+                    // windows of the main HWND (VLC's window will be among them).
+                    var mainHwnd = new WindowInteropHelper(this).Handle;
+                    RedrawWindow(mainHwnd, IntPtr.Zero, IntPtr.Zero,
+                        RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
                 }
             }
             catch
             {
-                // Ignore errors - video will still work
+                // Ignore errors — video will still work
             }
         }
 
