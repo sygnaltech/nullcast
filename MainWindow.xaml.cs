@@ -25,14 +25,28 @@ namespace VideoPlayer
         private bool _ytdlpReady;
 
         // Win32 click detection on the native LibVLC HWND
-        private const int WM_PARENTNOTIFY = 0x0210;
-        private const int WM_LBUTTONDOWN  = 0x0201;
+        private const int WM_PARENTNOTIFY  = 0x0210;
+        private const int WM_LBUTTONDOWN   = 0x0201;
         private const int WM_LBUTTONDBLCLK = 0x0203;
+        private const int WM_RBUTTONDOWN   = 0x0204;
         private DispatcherTimer _clickTimer;
         private bool _pendingClick;
 
         [DllImport("user32.dll")]
         private static extern uint GetDoubleClickTime();
+
+        // Quality selection
+        private string _currentUrl;
+        private int _selectedHeight = 1080; // default: good quality, streams well on fiber
+        private static readonly (int Height, string Label)[] QualityLevels =
+        {
+            (2160, "4K (2160p)"),
+            (1440, "1440p"),
+            (1080, "1080p"),
+            (720,  "720p"),
+            (480,  "480p"),
+            (360,  "360p"),
+        };
 
         public ICommand OpenUrlCommand { get; }
         public ICommand PlayPauseCommand { get; }
@@ -205,23 +219,33 @@ namespace VideoPlayer
                     return;
                 }
 
-                // Get video title
-                var title = await RunYtDlp("--get-title", url);
+                _currentUrl = url;
+
+                // Fetch title, best video URL, and best audio URL in parallel.
+                // bestvideo+bestaudio gives full resolution (1080p/4K); "best" alone caps at 720p
+                // because YouTube no longer provides high-res combined streams.
+                var titleTask = RunYtDlp("--get-title", url);
+                var videoTask = RunYtDlp($"-f bestvideo[height<={_selectedHeight}]/bestvideo -g", url);
+                var audioTask = RunYtDlp("-f bestaudio -g", url);
+                await Task.WhenAll(titleTask, videoTask, audioTask);
+
+                var title    = titleTask.Result?.Trim();
+                var videoUrl = videoTask.Result?.Trim();
+                var audioUrl = audioTask.Result?.Trim();
+
                 if (!string.IsNullOrEmpty(title))
-                {
-                    Title = $"Video Player - {title.Trim()}";
-                }
+                    Title = $"Video Player - {title}";
 
-                // Get the direct stream URL
-                var streamUrl = await RunYtDlp("-f best -g", url);
-
-                if (string.IsNullOrEmpty(streamUrl))
-                {
+                if (string.IsNullOrEmpty(videoUrl))
                     throw new Exception("Could not get stream URL");
-                }
 
                 App.Log($"[VLC] Creating new Media. Player state={_mediaPlayer.State}");
-                _currentMedia = new Media(_libVLC, new Uri(streamUrl.Trim()));
+                _currentMedia = new Media(_libVLC, new Uri(videoUrl));
+                if (!string.IsNullOrEmpty(audioUrl))
+                {
+                    App.Log("[VLC] Attaching audio slave");
+                    _currentMedia.AddOption($":input-slave={audioUrl}");
+                }
                 App.Log("[VLC] Calling Play()");
                 _mediaPlayer.Play(_currentMedia);
                 App.Log("[VLC] Play() returned");
@@ -341,8 +365,47 @@ namespace VideoPlayer
                         _clickTimer.Start();
                     }
                 }
+                else if (eventCode == WM_RBUTTONDOWN)
+                {
+                    // Defer past current message so WM_RBUTTONUP is processed and mouse capture released
+                    Dispatcher.InvokeAsync(ShowQualityMenu, System.Windows.Threading.DispatcherPriority.Input);
+                }
             }
             return IntPtr.Zero;
+        }
+
+        private void ShowQualityMenu()
+        {
+            GetCursorPos(out var pt);
+            var hwnd = new WindowInteropHelper(this).Handle;
+            var hMenu = CreatePopupMenu();
+            try
+            {
+                AppendMenu(hMenu, MF_STRING | MF_DISABLED, 0, "Quality");
+                AppendMenu(hMenu, MF_SEPARATOR, 0, null);
+
+                for (uint i = 0; i < QualityLevels.Length; i++)
+                {
+                    var (height, label) = QualityLevels[i];
+                    var flags = MF_STRING | (_selectedHeight == height ? MF_CHECKED : 0);
+                    AppendMenu(hMenu, flags, i + 1, label);
+                }
+
+                // TrackPopupMenu with TPM_RETURNCMD is blocking but runs its own message loop,
+                // so the UI stays responsive and Win32 focus/capture is handled correctly.
+                var cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.X, pt.Y, 0, hwnd, IntPtr.Zero);
+
+                if (cmd >= 1 && cmd <= (uint)QualityLevels.Length)
+                {
+                    _selectedHeight = QualityLevels[cmd - 1].Height;
+                    if (!string.IsNullOrEmpty(_currentUrl))
+                        _ = PlayYouTubeUrl(_currentUrl);
+                }
+            }
+            finally
+            {
+                DestroyMenu(hMenu);
+            }
         }
 
         private void VideoArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -382,6 +445,25 @@ namespace VideoPlayer
         private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
 
         private const int GCL_HBRBACKGROUND = -10;
+
+        // Win32 native popup menu (avoids WPF ContextMenu focus issues over native HWNDs)
+        private const uint MF_STRING    = 0x0000;
+        private const uint MF_SEPARATOR = 0x0800;
+        private const uint MF_CHECKED   = 0x0008;
+        private const uint MF_DISABLED  = 0x0002;
+        private const uint TPM_RETURNCMD   = 0x0100;
+        private const uint TPM_RIGHTBUTTON = 0x0002;
+
+        [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
+        [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr hMenu);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool AppendMenu(IntPtr hMenu, uint uFlags, uint uIDNewItem, string lpNewItem);
+        [DllImport("user32.dll")]
+        private static extern uint TrackPopupMenu(IntPtr hMenu, uint uFlags, int x, int y, int nReserved, IntPtr hWnd, IntPtr prcRect);
+        [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT { public int X, Y; }
 
         private void SetHwndBackground()
         {
