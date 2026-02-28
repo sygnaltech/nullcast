@@ -54,6 +54,21 @@ namespace VideoPlayer.Services
             catch { /* never interrupt playback */ }
         }
 
+        public async Task DeleteBookmarkAsync(string muid)
+        {
+            try
+            {
+                await _auth.EnsureValidTokenAsync();
+                var response = await SendAsync(HttpMethod.Delete, $"/api/v1/bookmarks/{muid}", null);
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    await _auth.EnsureValidTokenAsync();
+                    await SendAsync(HttpMethod.Delete, $"/api/v1/bookmarks/{muid}", null);
+                }
+            }
+            catch { }
+        }
+
         public async Task<Bookmark?> CreateBookmarkAsync(string url, int workspaceId, string title = null)
         {
             object payload = string.IsNullOrEmpty(title)

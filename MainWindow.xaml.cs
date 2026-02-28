@@ -13,6 +13,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
 using VideoPlayer.Models;
@@ -64,6 +65,9 @@ namespace VideoPlayer
         private bool                _loadingWorkspaces;  // suppress SelectionChanged during load
         private List<Workspace>     _workspaces = new();
         private Workspace           _selectedWorkspace;
+        private Bookmark            _contextMenuTarget;  // item under mouse when context menu opened
+        private ContextMenu         _playlistContextMenu;
+        private MenuItem            _toggleMenuItem;
 
         // App settings
         private static readonly string SettingsPath = Path.Combine(
@@ -90,6 +94,31 @@ namespace VideoPlayer
             InitializeVLC();
             SetupTimer();
             InitializeYtDlp();
+
+            // Build playlist context menu entirely in code to avoid XAML NameScope/Connect() issues
+            _toggleMenuItem = new MenuItem { Header = "Mark as Completed" };
+            var deleteMenuItem = new MenuItem { Header = "Delete" };
+            _toggleMenuItem.Click += PlaylistItem_ToggleCompleted_Click;
+            deleteMenuItem.Click  += PlaylistItem_Delete_Click;
+
+            var menuItemStyle = new Style(typeof(MenuItem));
+            menuItemStyle.Setters.Add(new Setter(MenuItem.ForegroundProperty, Brushes.White));
+            menuItemStyle.Setters.Add(new Setter(MenuItem.BackgroundProperty,
+                new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11))));
+
+            _playlistContextMenu = new ContextMenu
+            {
+                Background   = new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11)),
+                BorderBrush  = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                BorderThickness = new Thickness(1),
+                ItemContainerStyle = menuItemStyle,
+            };
+            _playlistContextMenu.Items.Add(_toggleMenuItem);
+            _playlistContextMenu.Items.Add(deleteMenuItem);
+            _playlistContextMenu.Opened += PlaylistContextMenu_Opened;
+
+            PlaylistBox.ContextMenu = _playlistContextMenu;
+            PlaylistBox.PreviewMouseRightButtonDown += PlaylistBox_PreviewMouseRightButtonDown;
         }
 
         private async void InitializeYtDlp()
@@ -364,6 +393,52 @@ namespace VideoPlayer
             _settings.PlaylistCollapsed = !_settings.PlaylistCollapsed;
             SaveSettings();
             UpdatePlaylistVisibility();
+        }
+
+        private void PlaylistBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            // Walk up from the clicked element to find the ListBoxItem and store its Bookmark
+            var element = e.OriginalSource as DependencyObject;
+            while (element != null && element is not ListBoxItem)
+                element = VisualTreeHelper.GetParent(element);
+            _contextMenuTarget = (element as ListBoxItem)?.DataContext as Bookmark;
+            // Suppress the menu if not over an item
+            _playlistContextMenu.Visibility = _contextMenuTarget != null
+                ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void PlaylistContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            if (_contextMenuTarget == null) return;
+            _toggleMenuItem.Header = _contextMenuTarget.IsCompleted
+                ? "Mark as Not Completed" : "Mark as Completed";
+        }
+
+        private void PlaylistItem_ToggleCompleted_Click(object sender, RoutedEventArgs e)
+        {
+            var bm = _contextMenuTarget;
+            if (bm == null) return;
+
+            bm.IsCompleted = !bm.IsCompleted;
+            if (bm.IsCompleted)
+                _settings.CompletedMuids.Add(bm.Muid);
+            else
+                _settings.CompletedMuids.Remove(bm.Muid);
+            SaveSettings();
+        }
+
+        private async void PlaylistItem_Delete_Click(object sender, RoutedEventArgs e)
+        {
+            var bm = _contextMenuTarget;
+            if (bm == null) return;
+
+            PlaylistItems.Remove(bm);
+            _settings.CompletedMuids.Remove(bm.Muid);
+            _settings.KnownDurations.Remove(bm.Muid);
+            SaveSettings();
+
+            if (_api != null)
+                await _api.DeleteBookmarkAsync(bm.Muid);
         }
 
         // ──────────────────────────────────────────────────────
