@@ -187,6 +187,11 @@ namespace VideoPlayer
                     {
                         var bm = PlaylistItems.FirstOrDefault(b => b.Muid == muid);
                         if (bm != null) bm.DurationSeconds = dur;
+                        // Persist so progress bars render correctly on next load
+                        if (_settings.KnownDurations.TryGetValue(muid, out var existing) && existing == dur)
+                            return;
+                        _settings.KnownDurations[muid] = dur;
+                        SaveSettings();
                     });
                 }
             };
@@ -305,6 +310,8 @@ namespace VideoPlayer
                 {
                     if (_settings.CompletedMuids.Contains(bm.Muid))
                         bm.IsCompleted = true;
+                    if (_settings.KnownDurations.TryGetValue(bm.Muid, out var dur))
+                        bm.DurationSeconds = dur;
                     PlaylistItems.Add(bm);
                 }
             }

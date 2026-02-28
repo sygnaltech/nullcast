@@ -10,5 +10,8 @@ namespace VideoPlayer.Models
 
         [JsonPropertyName("completed_muids")]
         public HashSet<string> CompletedMuids { get; set; } = new();
+
+        [JsonPropertyName("known_durations")]
+        public Dictionary<string, int> KnownDurations { get; set; } = new();
     }
 }
