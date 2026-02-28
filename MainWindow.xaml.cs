@@ -212,6 +212,12 @@ namespace VideoPlayer
                     var seconds = (int)(_mediaPlayer.Length / 1000);
                     _ = _api.SavePositionAsync(muid, seconds);
 
+                    // Mark completed locally and persist
+                    var bm = PlaylistItems.FirstOrDefault(b => b.Muid == muid);
+                    if (bm != null) bm.IsCompleted = true;
+                    if (_settings.CompletedMuids.Add(muid))
+                        SaveSettings();
+
                     if (_selectedWorkspace != null)
                         _ = RefreshBookmarksAsync(_selectedWorkspace.Id);
                 }
@@ -296,7 +302,11 @@ namespace VideoPlayer
                 var items = await _api.GetYouTubeBookmarksAsync(workspaceId);
                 PlaylistItems.Clear();
                 foreach (var bm in items)
+                {
+                    if (_settings.CompletedMuids.Contains(bm.Muid))
+                        bm.IsCompleted = true;
                     PlaylistItems.Add(bm);
+                }
             }
             catch (Exception ex)
             {

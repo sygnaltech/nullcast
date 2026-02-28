@@ -51,7 +51,6 @@ namespace VideoPlayer.Models
                 _durationSeconds = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(ProgressPercent));
-                OnPropertyChanged(nameof(IsCompleted));
             }
         }
 
@@ -61,9 +60,14 @@ namespace VideoPlayer.Models
                 ? Math.Min(100.0, Position.Value * 100.0 / dur)
                 : 0;
 
+        // Persisted via AppSettings.CompletedMuids — set by code-behind on load and on EndReached
+        private bool _isCompleted;
+
         [JsonIgnore]
-        public bool IsCompleted =>
-            DurationSeconds is int dur && dur > 0 &&
-            Position.HasValue && Position.Value >= dur;
+        public bool IsCompleted
+        {
+            get => _isCompleted;
+            set { _isCompleted = value; OnPropertyChanged(); }
+        }
     }
 }

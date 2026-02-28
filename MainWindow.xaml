@@ -423,9 +423,9 @@
                                         <ProgressBar.Template>
                                             <ControlTemplate TargetType="ProgressBar">
                                                 <Grid>
-                                                    <Border Background="Transparent"/>
+                                                    <Border x:Name="PART_Track" Background="Transparent"/>
                                                     <Border x:Name="PART_Indicator"
-                                                            Background="#1a3a5a"
+                                                            Background="#1a6aaa"
                                                             HorizontalAlignment="Left"/>
                                                 </Grid>
                                             </ControlTemplate>

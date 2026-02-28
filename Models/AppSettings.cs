@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace VideoPlayer.Models
@@ -6,5 +7,8 @@ namespace VideoPlayer.Models
     {
         [JsonPropertyName("playlist_collapsed")]
         public bool PlaylistCollapsed { get; set; }
+
+        [JsonPropertyName("completed_muids")]
+        public HashSet<string> CompletedMuids { get; set; } = new();
     }
 }
