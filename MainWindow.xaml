@@ -473,10 +473,20 @@
                                                  Height="4"
                                                  Margin="8,0,8,5"
                                                  IsHitTestVisible="False">
+                                        <ProgressBar.Style>
+                                            <Style TargetType="ProgressBar">
+                                                <Setter Property="Background" Value="#2a2a2a"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                                                        <Setter Property="Background" Value="#1a4a1a"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ProgressBar.Style>
                                         <ProgressBar.Template>
                                             <ControlTemplate TargetType="ProgressBar">
                                                 <Grid>
-                                                    <Border x:Name="PART_Track" Background="#2a2a2a" CornerRadius="2"/>
+                                                    <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="2"/>
                                                     <Border x:Name="PART_Indicator" Background="#44aa44" HorizontalAlignment="Left" CornerRadius="2"/>
                                                 </Grid>
                                             </ControlTemplate>
