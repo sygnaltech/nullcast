@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -63,6 +64,12 @@ namespace VideoPlayer
         private bool                _loadingWorkspaces;  // suppress SelectionChanged during load
         private List<Workspace>     _workspaces = new();
         private Workspace           _selectedWorkspace;
+
+        // App settings
+        private static readonly string SettingsPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "VideoPlayer", "settings.json");
+        private AppSettings _settings = new();
 
         public ObservableCollection<Bookmark> PlaylistItems { get; } = new();
 
@@ -170,6 +177,18 @@ namespace VideoPlayer
                     await Task.Delay(500);
                     _mediaPlayer.Time = seekTo;
                 }
+
+                // Stamp duration on the active bookmark so progress fill can render
+                var dur = (int)(_mediaPlayer.Length / 1000);
+                if (dur > 0 && _activeMuid != null)
+                {
+                    var muid = _activeMuid;
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        var bm = PlaylistItems.FirstOrDefault(b => b.Muid == muid);
+                        if (bm != null) bm.DurationSeconds = dur;
+                    });
+                }
             };
 
             _mediaPlayer.Paused += (s, e) => Dispatcher.InvokeAsync(() =>
@@ -208,6 +227,8 @@ namespace VideoPlayer
             _auth = new PlaylistAuthService();
             _api  = new PlaylistApiService(_auth);
 
+            await LoadSettingsAsync();
+
             var tokens = await _auth.LoadTokensAsync();
             if (tokens != null && !string.IsNullOrEmpty(tokens.AccessToken))
             {
@@ -221,6 +242,28 @@ namespace VideoPlayer
                     App.Log($"[Playlist] Startup load failed: {ex.Message}");
                 }
             }
+        }
+
+        private async Task LoadSettingsAsync()
+        {
+            try
+            {
+                if (!File.Exists(SettingsPath)) return;
+                var json = await File.ReadAllTextAsync(SettingsPath);
+                _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new();
+            }
+            catch { }
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+                var json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(SettingsPath, json);
+            }
+            catch { }
         }
 
         private async Task LoadPlaylistAsync()
@@ -276,16 +319,34 @@ namespace VideoPlayer
                 UserDisplayName.Visibility = Visibility.Collapsed;
                 ConnectButton.Visibility   = Visibility.Visible;
                 SignOutButton.Visibility   = Visibility.Collapsed;
-                PlaylistPanel.Visibility   = Visibility.Collapsed;
             }
+            UpdatePlaylistVisibility();
         }
 
         private void UpdatePlaylistVisibility()
         {
-            PlaylistPanel.Visibility =
-                (_auth?.IsSignedIn == true && WindowState != WindowState.Maximized && !_isFullscreen)
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
+            bool signedIn = _auth?.IsSignedIn == true;
+            bool hideAll  = !signedIn || WindowState == WindowState.Maximized || _isFullscreen;
+
+            if (hideAll)
+            {
+                PlaylistPanel.Visibility = Visibility.Collapsed;
+                PlaylistTab.Visibility   = Visibility.Collapsed;
+                return;
+            }
+
+            PlaylistTab.Visibility = Visibility.Visible;
+            CollapseToggleButton.Content = _settings.PlaylistCollapsed ? "❯" : "❮";
+            PlaylistPanel.Visibility = _settings.PlaylistCollapsed
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
+        private void CollapseToggle_Click(object sender, RoutedEventArgs e)
+        {
+            _settings.PlaylistCollapsed = !_settings.PlaylistCollapsed;
+            SaveSettings();
+            UpdatePlaylistVisibility();
         }
 
         // ──────────────────────────────────────────────────────
@@ -673,9 +734,15 @@ namespace VideoPlayer
             url = ExtractYouTubeUrl(url);
             if (string.IsNullOrEmpty(url)) return;
 
+            // Extract the page title from whichever format the browser populated.
+            // URL bar drag (Chrome/Edge): "FileGroupDescriptorW" contains a virtual .url file
+            //   whose filename is the page title.
+            // Link/anchor drag: DataFormats.Html contains <a href="...">Title</a>.
+            string title = ExtractTitleFromDragData(e.Data);
+
             try
             {
-                var bookmark = await _api.CreateBookmarkAsync(url, _selectedWorkspace.Id);
+                var bookmark = await _api.CreateBookmarkAsync(url, _selectedWorkspace.Id, title);
                 if (bookmark != null)
                 {
                     PlaylistItems.Add(bookmark);
@@ -699,6 +766,68 @@ namespace VideoPlayer
         {
             if (string.IsNullOrEmpty(text)) return false;
             return text.Contains("youtube.com") || text.Contains("youtu.be");
+        }
+
+        private string ExtractTitleFromDragData(IDataObject data)
+        {
+            // Strategy 1: URL bar drag (Chrome/Edge/Firefox) puts a virtual Internet Shortcut
+            // file into "FileGroupDescriptorW". The filename is "<Page Title>.url".
+            // FILEGROUPDESCRIPTORW layout: DWORD cItems (4) + FILEDESCRIPTORW[]
+            // FILEDESCRIPTORW layout: 72 bytes of flags/timestamps + WCHAR cFileName[MAX_PATH]
+            if (data.GetDataPresent("FileGroupDescriptorW"))
+            {
+                try
+                {
+                    using var ms = data.GetData("FileGroupDescriptorW") as System.IO.MemoryStream;
+                    if (ms != null)
+                    {
+                        var bytes = ms.ToArray();
+                        const int nameOffset = 4 + 72; // cItems DWORD + header fields
+                        if (bytes.Length > nameOffset + 2)
+                        {
+                            var nameLen = Math.Min(520, bytes.Length - nameOffset);
+                            var name = System.Text.Encoding.Unicode.GetString(bytes, nameOffset, nameLen);
+                            var nullIdx = name.IndexOf('\0');
+                            if (nullIdx >= 0) name = name[..nullIdx];
+                            name = name.Trim();
+                            if (name.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
+                                name = name[..^4].Trim();
+                            if (!string.IsNullOrEmpty(name))
+                                return StripYouTubeSuffix(name);
+                        }
+                    }
+                }
+                catch { /* fall through */ }
+            }
+
+            // Strategy 2: link/anchor drag puts <a href="...">Title</a> in the Html format.
+            if (data.GetDataPresent(DataFormats.Html))
+            {
+                try
+                {
+                    var html = data.GetData(DataFormats.Html) as string;
+                    if (!string.IsNullOrEmpty(html))
+                    {
+                        var match = Regex.Match(html, @">([^<]+)</a>", RegexOptions.IgnoreCase);
+                        if (match.Success)
+                        {
+                            var title = match.Groups[1].Value.Trim();
+                            if (!string.IsNullOrEmpty(title))
+                                return StripYouTubeSuffix(title);
+                        }
+                    }
+                }
+                catch { /* fall through */ }
+            }
+
+            return null;
+        }
+
+        private static string StripYouTubeSuffix(string title)
+        {
+            if (title.EndsWith(" - YouTube", StringComparison.OrdinalIgnoreCase))
+                title = title[..^" - YouTube".Length].Trim();
+            return string.IsNullOrEmpty(title) ? null : title;
         }
 
         private string ExtractYouTubeUrl(string text)

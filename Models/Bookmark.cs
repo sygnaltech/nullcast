@@ -1,10 +1,16 @@
 using System;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 
 namespace VideoPlayer.Models
 {
-    public class Bookmark
+    public class Bookmark : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged([CallerMemberName] string name = "") =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
         [JsonPropertyName("id")]          public int      Id        { get; set; }
         [JsonPropertyName("muid")]        public string   Muid      { get; set; } = "";
         [JsonPropertyName("url")]         public string   Url       { get; set; } = "";
@@ -31,5 +37,33 @@ namespace VideoPlayer.Models
                     : $"▶ {ts.Minutes}:{ts.Seconds:D2}";
             }
         }
+
+        // ── Runtime-only (not persisted) ──────────────────────
+
+        private int? _durationSeconds;
+
+        [JsonIgnore]
+        public int? DurationSeconds
+        {
+            get => _durationSeconds;
+            set
+            {
+                _durationSeconds = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ProgressPercent));
+                OnPropertyChanged(nameof(IsCompleted));
+            }
+        }
+
+        [JsonIgnore]
+        public double ProgressPercent =>
+            (Position.HasValue && DurationSeconds is int dur && dur > 0)
+                ? Math.Min(100.0, Position.Value * 100.0 / dur)
+                : 0;
+
+        [JsonIgnore]
+        public bool IsCompleted =>
+            DurationSeconds is int dur && dur > 0 &&
+            Position.HasValue && Position.Value >= dur;
     }
 }

@@ -4,7 +4,8 @@
       "Bash(dotnet list package:*)",
       "Bash(dotnet restore:*)",
       "Bash(dotnet build:*)",
-      "mcp__havoc__*"
+      "mcp__havoc__*",
+      "Read(//c/Users/OEM/AppData/Local/Temp/**)"
     ]
   },
   "enableAllProjectMcpServers": true

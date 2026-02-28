@@ -54,9 +54,12 @@ namespace VideoPlayer.Services
             catch { /* never interrupt playback */ }
         }
 
-        public async Task<Bookmark?> CreateBookmarkAsync(string url, int workspaceId)
+        public async Task<Bookmark?> CreateBookmarkAsync(string url, int workspaceId, string title = null)
         {
-            var body = JsonSerializer.Serialize(new { url, workspace_id = workspaceId });
+            object payload = string.IsNullOrEmpty(title)
+                ? new { url, workspace_id = workspaceId }
+                : (object)new { url, workspace_id = workspaceId, title };
+            var body = JsonSerializer.Serialize(payload);
             var json = await PostJsonAsync("/api/v1/bookmarks", body);
             return JsonSerializer.Deserialize<Bookmark>(json);
         }
