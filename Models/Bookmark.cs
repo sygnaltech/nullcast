@@ -16,11 +16,25 @@ namespace VideoPlayer.Models
         [JsonPropertyName("url")]         public string   Url       { get; set; } = "";
         [JsonPropertyName("title")]       public string   Title     { get; set; } = "";
         [JsonPropertyName("type")]        public string   Type      { get; set; } = "";
-        [JsonPropertyName("position")]    public int?     Position  { get; set; }
         [JsonPropertyName("starred")]     public bool     Starred   { get; set; }
         [JsonPropertyName("tags")]        public string[] Tags      { get; set; } = [];
         [JsonPropertyName("created_at")]  public string   CreatedAt { get; set; } = "";
         [JsonPropertyName("updated_at")]  public string   UpdatedAt { get; set; } = "";
+
+        private int? _position;
+        [JsonPropertyName("position")]
+        public int? Position
+        {
+            get => _position;
+            set
+            {
+                _position = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasPosition));
+                OnPropertyChanged(nameof(PositionLabel));
+                OnPropertyChanged(nameof(ProgressPercent));
+            }
+        }
 
         [JsonIgnore]
         public bool HasPosition => Position.HasValue && Position.Value > 0;

@@ -454,8 +454,9 @@ namespace VideoPlayer
             if (_mediaPlayer == null || !_mediaPlayer.IsPlaying || _isDraggingSlider)
                 return;
 
-            var length = _mediaPlayer.Length;
-            var time   = _mediaPlayer.Time;
+            var length  = _mediaPlayer.Length;
+            var time    = _mediaPlayer.Time;
+            var seconds = (int)(time / 1000);
 
             if (length > 0)
             {
@@ -463,14 +464,21 @@ namespace VideoPlayer
                 TimeDisplay.Text     = $"{FormatTime(time)} / {FormatTime(length)}";
             }
 
-            // Save position every 10 seconds (20 × 500ms ticks)
+            // Update sidebar progress bar live
+            if (_activeMuid != null)
+            {
+                var bm = PlaylistItems.FirstOrDefault(b => b.Muid == _activeMuid);
+                if (bm != null)
+                    bm.Position = seconds;
+            }
+
+            // Save position to server every 10 seconds (20 × 500ms ticks)
             if (_activeMuid != null && _api != null)
             {
                 _positionSaveTick++;
                 if (_positionSaveTick >= 20)
                 {
                     _positionSaveTick = 0;
-                    var seconds = (int)(time / 1000);
                     _ = _api.SavePositionAsync(_activeMuid, seconds);
                 }
             }
