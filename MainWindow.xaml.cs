@@ -397,14 +397,19 @@ namespace VideoPlayer
 
         private void PlaylistBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
-            // Walk up from the clicked element to find the ListBoxItem and store its Bookmark
+            // Walk up from the clicked element to find the ListBoxItem
             var element = e.OriginalSource as DependencyObject;
             while (element != null && element is not ListBoxItem)
                 element = VisualTreeHelper.GetParent(element);
             _contextMenuTarget = (element as ListBoxItem)?.DataContext as Bookmark;
-            // Suppress the menu if not over an item
-            _playlistContextMenu.Visibility = _contextMenuTarget != null
-                ? Visibility.Visible : Visibility.Collapsed;
+
+            // Mark handled so the ListBoxItem never receives MouseRightButtonDown,
+            // which prevents it calling Focus() and triggering a selection change.
+            e.Handled = true;
+
+            // Manually open the context menu only when over a playlist item
+            if (_contextMenuTarget != null)
+                _playlistContextMenu.IsOpen = true;
         }
 
         private void PlaylistContextMenu_Opened(object sender, RoutedEventArgs e)
