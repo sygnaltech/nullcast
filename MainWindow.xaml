@@ -414,26 +414,13 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <Grid>
-                                    <!-- Progress fill layer (behind content, not interactive) -->
-                                    <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}"
-                                                 Maximum="100"
-                                                 IsHitTestVisible="False"
-                                                 VerticalAlignment="Stretch"
-                                                 HorizontalAlignment="Stretch">
-                                        <ProgressBar.Template>
-                                            <ControlTemplate TargetType="ProgressBar">
-                                                <Grid>
-                                                    <Border x:Name="PART_Track" Background="Transparent"/>
-                                                    <Border x:Name="PART_Indicator"
-                                                            Background="#1a6aaa"
-                                                            HorizontalAlignment="Left"/>
-                                                </Grid>
-                                            </ControlTemplate>
-                                        </ProgressBar.Template>
-                                    </ProgressBar>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
 
-                                    <!-- Content layer -->
-                                    <Grid Margin="8,6,8,6">
+                                    <!-- Content row -->
+                                    <Grid Grid.Row="0" Margin="8,6,8,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -478,6 +465,23 @@
                                             </TextBlock.Style>
                                         </TextBlock>
                                     </Grid>
+
+                                    <!-- Progress bar at bottom (always visible, green fill) -->
+                                    <ProgressBar Grid.Row="1"
+                                                 Value="{Binding ProgressPercent, Mode=OneWay}"
+                                                 Maximum="100"
+                                                 Height="4"
+                                                 Margin="8,0,8,5"
+                                                 IsHitTestVisible="False">
+                                        <ProgressBar.Template>
+                                            <ControlTemplate TargetType="ProgressBar">
+                                                <Grid>
+                                                    <Border x:Name="PART_Track" Background="#2a2a2a" CornerRadius="2"/>
+                                                    <Border x:Name="PART_Indicator" Background="#44aa44" HorizontalAlignment="Left" CornerRadius="2"/>
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </ProgressBar.Template>
+                                    </ProgressBar>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
