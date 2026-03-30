@@ -581,34 +581,23 @@ namespace VideoPlayer
 
                 _currentUrl = url;
 
-                // Fetch title, best video URL, and best audio URL in parallel
+                // Fetch title and stream URL in parallel
+                // Use best muxed format (video+audio in one stream) capped at selected quality
                 var titleTask = RunYtDlp("--get-title", url);
-                var videoTask = RunYtDlp($"-f bestvideo[height<={_selectedHeight}]/bestvideo -g", url);
-                var audioTask = RunYtDlp("-f bestaudio -g", url);
-                await Task.WhenAll(titleTask, videoTask, audioTask);
+                var streamTask = RunYtDlp($"-f best[height<={_selectedHeight}]/best -g", url);
+                await Task.WhenAll(titleTask, streamTask);
 
-                var title    = titleTask.Result?.Trim();
-                var videoUrl = videoTask.Result?.Trim();
-                var audioUrl = audioTask.Result?.Trim();
+                var title     = titleTask.Result?.Trim();
+                var streamUrl = streamTask.Result?.Trim();
 
                 if (!string.IsNullOrEmpty(title))
                     Title = $"Video Player v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3)} - {title}";
 
-                if (string.IsNullOrEmpty(videoUrl))
+                if (string.IsNullOrEmpty(streamUrl))
                     throw new Exception("Could not get stream URL");
 
-                App.Log($"[Flyleaf] Opening video. Status={_player.Status}");
-
-                // Open the video stream
-                _player.OpenAsync(videoUrl);
-
-                // If separate audio stream, add it as external audio after video opens
-                if (!string.IsNullOrEmpty(audioUrl))
-                {
-                    var extAudio = new FlyleafLib.MediaFramework.MediaStream.ExternalStream { Url = audioUrl };
-                    _player.OpenAsync(extAudio);
-                }
-
+                App.Log($"[Flyleaf] Opening stream. Status={_player.Status}");
+                _player.OpenAsync(streamUrl);
                 App.Log("[Flyleaf] OpenAsync() called");
             }
             catch (Exception ex)
