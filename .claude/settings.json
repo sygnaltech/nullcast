@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/OEM/.nuget/packages/flyleaflib/3.10.2/lib/net8.0-windows7.0/**)"
+    ]
+  }
+}
