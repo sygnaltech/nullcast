@@ -1,7 +1,7 @@
 <Window x:Class="VideoPlayer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib.Controls.WPF"
+        xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
         Title="Video Player"
         Icon="VideoPlayer.ico"
         Height="600" Width="900"
@@ -278,9 +278,7 @@
                   DragOver="VideoArea_DragOver"
                   Drop="VideoArea_Drop"
                   MouseLeftButtonDown="VideoArea_MouseLeftButtonDown">
-                <fl:FlyleafME x:Name="FlyleafPlayer" Background="Black"
-                              KeyBindings="None"
-                              ActivityTimeout="0"/>
+                <fl:FlyleafHost x:Name="FlyleafPlayer" Background="Black"/>
 
                 <!-- Loading/Status overlay -->
                 <TextBlock x:Name="StatusText"
