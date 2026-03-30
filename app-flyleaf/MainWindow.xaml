@@ -278,7 +278,9 @@
                   DragOver="VideoArea_DragOver"
                   Drop="VideoArea_Drop"
                   MouseLeftButtonDown="VideoArea_MouseLeftButtonDown">
-                <fl:FlyleafHost x:Name="FlyleafPlayer" Background="Black"/>
+                <fl:FlyleafHost x:Name="FlyleafPlayer" Background="Black"
+                                MouseBindings="None" KeyBindings="None"
+                                ToggleFullScreenOnDoubleClick="None"/>
 
                 <!-- Loading/Status overlay -->
                 <TextBlock x:Name="StatusText"

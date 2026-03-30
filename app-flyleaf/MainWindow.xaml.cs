@@ -146,8 +146,20 @@ namespace VideoPlayer
 
             Loaded += async (s, e) =>
             {
-                // Attach the player to the FlyleafME control
+                // Attach the player to the FlyleafHost control
                 FlyleafPlayer.Player = _player;
+
+                // Hook mouse events on overlay and surface windows
+                FlyleafPlayer.OverlayCreated += (ps, pe) =>
+                {
+                    App.Log("[Flyleaf] Overlay created, hooking mouse events");
+                    FlyleafPlayer.Overlay.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
+                };
+                FlyleafPlayer.SurfaceCreated += (ps, pe) =>
+                {
+                    App.Log("[Flyleaf] Surface created, hooking mouse events");
+                    FlyleafPlayer.Surface.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
+                };
 
                 // Pin to all virtual desktops
                 var hwnd = new WindowInteropHelper(this).Handle;
