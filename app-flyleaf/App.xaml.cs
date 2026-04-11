@@ -22,7 +22,7 @@ namespace VideoPlayer
             // Initialize Flyleaf engine (must happen before any Player is created)
             Engine.Start(new EngineConfig
             {
-                FFmpegPath     = AppDomain.CurrentDomain.BaseDirectory,
+                FFmpegPath     = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FFmpeg"),
                 FFmpegLogLevel = Flyleaf.FFmpeg.LogLevel.Quiet,
                 UIRefresh      = true,
             });

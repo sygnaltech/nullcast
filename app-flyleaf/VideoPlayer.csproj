@@ -16,6 +16,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="FFmpeg\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FlyleafLib" Version="3.10.2" />
     <PackageReference Include="FlyleafLib.Controls.WPF" Version="1.6.2" />
     <PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="8.0.1" />
