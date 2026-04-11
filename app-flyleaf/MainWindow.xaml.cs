@@ -817,7 +817,9 @@ namespace VideoPlayer
                 App.Log($"[Drop] CreateBookmarkAsync returned: {(bookmark == null ? "null" : bookmark.Muid)}");
                 if (bookmark != null)
                 {
-                    PlaylistItems.Add(bookmark);
+                    // Re-pull the list from the server so the dropped item shows up
+                    // (whether it was a new insert or an existing duplicate)
+                    await RefreshBookmarksAsync(_selectedWorkspace.Id);
 
                     if (_player.Status != Status.Playing)
                     {
