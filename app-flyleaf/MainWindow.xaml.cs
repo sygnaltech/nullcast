@@ -736,6 +736,7 @@ namespace VideoPlayer
 
         private async void VideoArea_Drop(object sender, DragEventArgs e)
         {
+            App.Log("[Drop] VideoArea_Drop fired");
             string url = null;
 
             if (e.Data.GetDataPresent(DataFormats.Text))
@@ -783,7 +784,15 @@ namespace VideoPlayer
 
         private async void PlaylistArea_Drop(object sender, DragEventArgs e)
         {
-            if (_auth?.IsSignedIn != true || _selectedWorkspace == null) return;
+            App.Log($"[Drop] PlaylistArea_Drop fired. SignedIn={_auth?.IsSignedIn} Workspace={_selectedWorkspace?.Name ?? "null"}");
+
+            if (_auth?.IsSignedIn != true || _selectedWorkspace == null)
+            {
+                App.Log("[Drop] Aborted — not signed in or no workspace");
+                return;
+            }
+
+            e.Handled = true;
 
             string url = null;
             if (e.Data.GetDataPresent(DataFormats.Text))
@@ -791,15 +800,21 @@ namespace VideoPlayer
             else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
                 url = e.Data.GetData(DataFormats.UnicodeText) as string;
 
+            App.Log($"[Drop] Raw URL: {url ?? "null"}");
+
             if (string.IsNullOrEmpty(url)) return;
             url = ExtractYouTubeUrl(url);
+            App.Log($"[Drop] Extracted URL: {url}");
             if (string.IsNullOrEmpty(url)) return;
 
             string title = ExtractTitleFromDragData(e.Data);
+            App.Log($"[Drop] Title: {title ?? "null"}");
 
             try
             {
+                App.Log($"[Drop] Calling CreateBookmarkAsync...");
                 var bookmark = await _api.CreateBookmarkAsync(url, _selectedWorkspace.Id, title);
+                App.Log($"[Drop] CreateBookmarkAsync returned: {(bookmark == null ? "null" : bookmark.Muid)}");
                 if (bookmark != null)
                 {
                     PlaylistItems.Add(bookmark);
@@ -812,6 +827,7 @@ namespace VideoPlayer
             }
             catch (Exception ex)
             {
+                App.Log($"[Drop] Exception: {ex}");
                 MessageBox.Show($"Could not add to playlist: {ex.Message}",
                     "Playlist", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
