@@ -43,6 +43,14 @@ namespace VideoPlayer
             (360,  "360p"),
         };
 
+        // Local playback history
+        private readonly HistoryService _history = new();
+
+        // Click disambiguation + auto-hide overlay controls
+        private DispatcherTimer _clickTimer;
+        private DispatcherTimer _controlsHideTimer;
+        private bool            _controlsOverlayMode;
+
         // Playlist service
         private PlaylistAuthService _auth;
         private PlaylistApiService  _api;
@@ -63,6 +71,7 @@ namespace VideoPlayer
         private AppSettings _settings = new();
 
         public ObservableCollection<Bookmark> PlaylistItems { get; } = new();
+        public ObservableCollection<HistoryEntry> HistoryItems { get; } = new();
 
         public ICommand OpenUrlCommand  { get; }
         public ICommand PlayPauseCommand { get; }
@@ -106,6 +115,15 @@ namespace VideoPlayer
 
             PlaylistBox.ContextMenu = _playlistContextMenu;
             PlaylistBox.PreviewMouseRightButtonDown += PlaylistBox_PreviewMouseRightButtonDown;
+
+            // Keep the overlay controls alive while the pointer is over them, and
+            // keep them positioned when the video area resizes.
+            ControlsBar.MouseMove += (s, e) => { if (_controlsOverlayMode) ShowOverlayControls(); };
+            VideoContainer.SizeChanged += (s, e) =>
+            {
+                if (_controlsOverlayMode && OverlayControlsPopup.IsOpen)
+                    PositionOverlayControls();
+            };
         }
 
         private async void InitializeYtDlp()
@@ -152,13 +170,23 @@ namespace VideoPlayer
                 // Hook mouse events on overlay and surface windows
                 FlyleafPlayer.OverlayCreated += (ps, pe) =>
                 {
-                    App.Log("[Flyleaf] Overlay created, hooking mouse events");
+                    App.Log("[Flyleaf] Overlay created, hooking mouse + drop events");
                     FlyleafPlayer.Overlay.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
+                    FlyleafPlayer.Overlay.MouseMove          += VideoArea_MouseMove;
+                    FlyleafPlayer.Overlay.AllowDrop = true;
+                    FlyleafPlayer.Overlay.DragOver += VideoArea_DragOver;
+                    FlyleafPlayer.Overlay.Drop     += VideoArea_Drop;
                 };
                 FlyleafPlayer.SurfaceCreated += (ps, pe) =>
                 {
-                    App.Log("[Flyleaf] Surface created, hooking mouse events");
+                    App.Log("[Flyleaf] Surface created, hooking mouse + drop events");
                     FlyleafPlayer.Surface.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
+                    FlyleafPlayer.Surface.MouseMove          += VideoArea_MouseMove;
+                    // The surface HWND is the real OLE drop target over the video, so
+                    // register our handler here (Flyleaf's own OpenOnDrop is disabled).
+                    FlyleafPlayer.Surface.AllowDrop = true;
+                    FlyleafPlayer.Surface.DragOver += VideoArea_DragOver;
+                    FlyleafPlayer.Surface.Drop     += VideoArea_Drop;
                 };
 
                 // Pin to all virtual desktops
@@ -252,6 +280,9 @@ namespace VideoPlayer
             _api  = new PlaylistApiService(_auth);
 
             await LoadSettingsAsync();
+
+            await _history.LoadAsync();
+            RefreshHistoryView();
 
             var tokens = await _auth.LoadTokensAsync();
             if (tokens != null && !string.IsNullOrEmpty(tokens.AccessToken))
@@ -355,21 +386,72 @@ namespace VideoPlayer
 
         private void UpdatePlaylistVisibility()
         {
-            bool signedIn = _auth?.IsSignedIn == true;
-            bool hideAll  = !signedIn || WindowState == WindowState.Maximized || _isFullscreen;
+            // The sidebar hosts both the online Playlist (needs sign-in) and the
+            // local History (always available), so it is hidden only in the
+            // immersive maximized/fullscreen modes.
+            bool hideAll = WindowState == WindowState.Maximized || _isFullscreen;
 
             if (hideAll)
             {
-                PlaylistPanel.Visibility = Visibility.Collapsed;
-                PlaylistTab.Visibility   = Visibility.Collapsed;
+                SidePanel.Visibility   = Visibility.Collapsed;
+                PlaylistTab.Visibility = Visibility.Collapsed;
                 return;
             }
 
             PlaylistTab.Visibility = Visibility.Visible;
             CollapseToggleButton.Content = _settings.PlaylistCollapsed ? "❯" : "❮";
-            PlaylistPanel.Visibility = _settings.PlaylistCollapsed
+            SidePanel.Visibility = _settings.PlaylistCollapsed
                 ? Visibility.Collapsed
                 : Visibility.Visible;
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Sidebar tabs (Playlist / History)
+        // ──────────────────────────────────────────────────────
+
+        private void ShowPlaylistTab_Click(object sender, RoutedEventArgs e) => SelectTab(history: false);
+        private void ShowHistoryTab_Click(object sender, RoutedEventArgs e)  => SelectTab(history: true);
+
+        private void SelectTab(bool history)
+        {
+            PlaylistContent.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
+            HistoryContent.Visibility  = history ? Visibility.Visible   : Visibility.Collapsed;
+
+            // Active tab reads brighter; inactive dims.
+            PlaylistTabButton.Background = new SolidColorBrush(history ? Color.FromRgb(0x11, 0x11, 0x11) : Color.FromRgb(0x1a, 0x1a, 0x1a));
+            PlaylistTabButton.Foreground = history ? new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)) : Brushes.White;
+            HistoryTabButton.Background  = new SolidColorBrush(history ? Color.FromRgb(0x1a, 0x1a, 0x1a) : Color.FromRgb(0x11, 0x11, 0x11));
+            HistoryTabButton.Foreground  = history ? Brushes.White : new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+
+            if (history) RefreshHistoryView();
+        }
+
+        // ──────────────────────────────────────────────────────
+        // History
+        // ──────────────────────────────────────────────────────
+
+        private void RefreshHistoryView()
+        {
+            var query = HistorySearchBox?.Text ?? "";
+            HistoryItems.Clear();
+            foreach (var entry in _history.Search(query))
+                HistoryItems.Add(entry);
+        }
+
+        private void HistorySearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RefreshHistoryView();
+        }
+
+        private async void HistoryBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count == 0) return;
+            if (HistoryBox.SelectedItem is HistoryEntry entry && !string.IsNullOrEmpty(entry.Url))
+            {
+                _activeMuid = null;
+                _seekOnPlay = null;
+                await PlayYouTubeUrl(entry.Url);
+            }
         }
 
         private void CollapseToggle_Click(object sender, RoutedEventArgs e)
@@ -499,6 +581,7 @@ namespace VideoPlayer
         private void Window_StateChanged(object sender, EventArgs e)
         {
             UpdatePlaylistVisibility();
+            UpdateControlsMode();
         }
 
         // ──────────────────────────────────────────────────────
@@ -608,6 +691,11 @@ namespace VideoPlayer
                 if (string.IsNullOrEmpty(streamUrl))
                     throw new Exception("Could not get stream URL");
 
+                // Record to local-only history (de-duped by URL, most-recent first).
+                _history.Record(url, title);
+                if (HistoryContent.Visibility == Visibility.Visible)
+                    RefreshHistoryView();
+
                 App.Log($"[Flyleaf] Opening stream. Status={_player.Status}");
                 _player.OpenAsync(streamUrl);
                 App.Log("[Flyleaf] OpenAsync() called");
@@ -714,8 +802,44 @@ namespace VideoPlayer
         // Drag & drop
         // ──────────────────────────────────────────────────────
 
+        // Window-level drag probes: fire for any drag over the WPF client area,
+        // even if element hit-testing/AllowDrop routing fails. If these DON'T fire,
+        // the OS never delivered the drop (surface HWND swallowed it / source issue).
+        private void Window_PreviewDragOver(object sender, DragEventArgs e) => LogDrag("Window", e);
+
+        private void Window_PreviewDrop(object sender, DragEventArgs e)
+            => App.Log("[Drop] Window_PreviewDrop fired");
+
+        private string _dragLogSig;
+
+        /// <summary>Logs the drag payload once per distinct drag (DragOver fires
+        /// continuously) so we can see whether the event fires and what formats
+        /// the source is offering.</summary>
+        private void LogDrag(string where, DragEventArgs e)
+        {
+            try
+            {
+                var formats = string.Join(",", e.Data.GetFormats());
+                string text = null;
+                if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+                    text = e.Data.GetData(DataFormats.UnicodeText) as string;
+                else if (e.Data.GetDataPresent(DataFormats.Text))
+                    text = e.Data.GetData(DataFormats.Text) as string;
+
+                var sig = $"{where}|{formats}|{text}";
+                if (sig == _dragLogSig) return;
+                _dragLogSig = sig;
+                App.Log($"[DragOver] {where} formats=[{formats}] text=\"{text}\" isYT={IsYouTubeUrl(text)}");
+            }
+            catch (Exception ex)
+            {
+                App.Log($"[DragOver] {where} log error: {ex.Message}");
+            }
+        }
+
         private void VideoArea_DragOver(object sender, DragEventArgs e)
         {
+            LogDrag("VideoArea", e);
             e.Effects = DragDropEffects.None;
 
             if (e.Data.GetDataPresent(DataFormats.Text))
@@ -758,6 +882,7 @@ namespace VideoPlayer
 
         private void PlaylistArea_DragOver(object sender, DragEventArgs e)
         {
+            LogDrag("PlaylistArea", e);
             e.Effects = DragDropEffects.None;
 
             if (_auth?.IsSignedIn != true)
@@ -924,14 +1049,53 @@ namespace VideoPlayer
         {
             if (e.ClickCount == 2)
             {
-                ToggleFullscreen();
+                // A double-click maximizes/normalizes the window and must NOT toggle
+                // play/pause — cancel the pending single-click action.
+                _clickTimer?.Stop();
+                ToggleMaximizeNormal();
                 e.Handled = true;
             }
             else if (e.ClickCount == 1)
             {
-                PlayPause_Click(null, null);
+                // Defer the play/pause toggle by the system double-click interval so
+                // it only fires if no second click follows.
+                _clickTimer?.Stop();
+                if (_clickTimer == null)
+                {
+                    _clickTimer = new DispatcherTimer();
+                    _clickTimer.Tick += (s, _) =>
+                    {
+                        _clickTimer.Stop();
+                        PlayPause_Click(null, null);
+                    };
+                }
+                _clickTimer.Interval = TimeSpan.FromMilliseconds(
+                    System.Windows.Forms.SystemInformation.DoubleClickTime);
+                _clickTimer.Start();
                 e.Handled = true;
             }
+        }
+
+        /// <summary>Double-click behaviour: toggle Maximized ↔ Normal (windowed
+        /// fullscreen stays on F11/Esc). Never affects the play/pause state.</summary>
+        private void ToggleMaximizeNormal()
+        {
+            if (_isFullscreen) return; // borderless fullscreen is managed via F11/Esc
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+        }
+
+        private void VideoArea_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_controlsOverlayMode)
+                ShowOverlayControls();
+        }
+
+        private void Window_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_controlsOverlayMode)
+                ShowOverlayControls();
         }
 
         // ──────────────────────────────────────────────────────
@@ -995,8 +1159,7 @@ namespace VideoPlayer
             if (_isFullscreen)
             {
                 _isFullscreen = false;
-                TopBar.Visibility      = Visibility.Visible;
-                ControlsBar.Visibility = Visibility.Visible;
+                TopBar.Visibility = Visibility.Visible;
                 WindowStyle = WindowStyle.SingleBorderWindow;
                 ResizeMode  = ResizeMode.CanResize;
                 Topmost     = false;
@@ -1011,6 +1174,7 @@ namespace VideoPlayer
                 }
 
                 UpdatePlaylistVisibility();
+                UpdateControlsMode();
             }
             else
             {
@@ -1021,9 +1185,9 @@ namespace VideoPlayer
                 _previousLeft        = Left;
                 _previousTop         = Top;
 
-                TopBar.Visibility      = Visibility.Collapsed;
-                ControlsBar.Visibility = Visibility.Collapsed;
+                TopBar.Visibility = Visibility.Collapsed;
                 UpdatePlaylistVisibility();
+                UpdateControlsMode();
 
                 WindowStyle = WindowStyle.None;
                 ResizeMode  = ResizeMode.NoResize;
@@ -1044,6 +1208,89 @@ namespace VideoPlayer
                 Width  = screen.Bounds.Width * dpiX;
                 Height = screen.Bounds.Height * dpiY;
             }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Auto-hiding controls overlay (maximized / fullscreen only)
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Docked bottom bar in normal windowed mode; a floating auto-hiding
+        /// overlay when maximized or fullscreen.
+        /// </summary>
+        private void UpdateControlsMode()
+        {
+            bool overlay = _isFullscreen || WindowState == WindowState.Maximized;
+            if (overlay == _controlsOverlayMode) return;
+            _controlsOverlayMode = overlay;
+
+            if (overlay)
+            {
+                // Re-parent the docked ControlsBar into the top-level Popup so it
+                // paints above the Flyleaf video surface.
+                if (RootGrid.Children.Contains(ControlsBar))
+                    RootGrid.Children.Remove(ControlsBar);
+                OverlayControlsPopup.Child = ControlsBar;
+
+                // Reveal briefly on entry, then auto-hide.
+                ShowOverlayControls();
+            }
+            else
+            {
+                _controlsHideTimer?.Stop();
+                OverlayControlsPopup.IsOpen = false;
+                OverlayControlsPopup.Child  = null;
+
+                ControlsBar.Width      = double.NaN;   // stretch inside the grid row
+                ControlsBar.Visibility = Visibility.Visible;
+                if (!RootGrid.Children.Contains(ControlsBar))
+                {
+                    RootGrid.Children.Add(ControlsBar);
+                    Grid.SetRow(ControlsBar, 2);
+                }
+            }
+        }
+
+        private void PositionOverlayControls()
+        {
+            double w = VideoContainer.ActualWidth;
+            double h = VideoContainer.ActualHeight;
+            if (w <= 0 || h <= 0) return;
+
+            ControlsBar.Width = w;
+            OverlayControlsPopup.Width           = w;
+            OverlayControlsPopup.HorizontalOffset = 0;
+            OverlayControlsPopup.VerticalOffset   = Math.Max(0, h - ControlsBar.Height);
+        }
+
+        private void ShowOverlayControls()
+        {
+            if (!_controlsOverlayMode) return;
+
+            PositionOverlayControls();
+            OverlayControlsPopup.IsOpen = true;
+
+            if (_controlsHideTimer == null)
+            {
+                _controlsHideTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(1500)
+                };
+                _controlsHideTimer.Tick += (s, _) =>
+                {
+                    // Stay visible while the pointer is over the controls themselves.
+                    if (ControlsBar.IsMouseOver)
+                    {
+                        _controlsHideTimer.Stop();
+                        _controlsHideTimer.Start();
+                        return;
+                    }
+                    _controlsHideTimer.Stop();
+                    OverlayControlsPopup.IsOpen = false;
+                };
+            }
+            _controlsHideTimer.Stop();
+            _controlsHideTimer.Start();
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)

@@ -9,7 +9,11 @@
         Background="Black"
         Closing="Window_Closing"
         KeyDown="Window_KeyDown"
-        StateChanged="Window_StateChanged">
+        StateChanged="Window_StateChanged"
+        MouseMove="Window_MouseMove"
+        AllowDrop="True"
+        PreviewDragOver="Window_PreviewDragOver"
+        PreviewDrop="Window_PreviewDrop">
 
     <Window.Resources>
         <!-- System color overrides for dark theme -->
@@ -220,7 +224,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -280,7 +284,8 @@
                   MouseLeftButtonDown="VideoArea_MouseLeftButtonDown">
                 <fl:FlyleafHost x:Name="FlyleafPlayer" Background="Black"
                                 MouseBindings="None" KeyBindings="None"
-                                ToggleFullScreenOnDoubleClick="None"/>
+                                ToggleFullScreenOnDoubleClick="None"
+                                OpenOnDrop="None" SwapOnDrop="None"/>
 
                 <!-- Loading/Status overlay -->
                 <TextBlock x:Name="StatusText"
@@ -299,20 +304,44 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Playlist panel -->
-                <Grid x:Name="PlaylistPanel"
+                <!-- Side panel: tab header + swappable Playlist / History content -->
+                <Grid x:Name="SidePanel"
                       Grid.Column="0"
                       Width="260"
                       Background="#1a1a1a"
-                      Visibility="Collapsed"
-                      AllowDrop="True"
-                      DragOver="PlaylistArea_DragOver"
-                      Drop="PlaylistArea_Drop">
+                      Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
+
+                    <!-- Tab header -->
+                    <Grid Grid.Row="0" Background="#111" Height="30">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="PlaylistTabButton" Grid.Column="0" Content="Playlist"
+                                Click="ShowPlaylistTab_Click"
+                                Background="#1a1a1a" Foreground="White"
+                                BorderThickness="0" FontSize="12" Cursor="Hand"/>
+                        <Button x:Name="HistoryTabButton" Grid.Column="1" Content="History"
+                                Click="ShowHistoryTab_Click"
+                                Background="#111" Foreground="#888888"
+                                BorderThickness="0" FontSize="12" Cursor="Hand"/>
+                    </Grid>
+
+                    <!-- Playlist content (online bookmarks; requires sign-in) -->
+                    <Grid x:Name="PlaylistContent"
+                          Grid.Row="1"
+                          AllowDrop="True"
+                          DragOver="PlaylistArea_DragOver"
+                          Drop="PlaylistArea_Drop">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
                     <!-- Workspace selector -->
                     <Grid Grid.Row="0" Background="#2a2a2a">
@@ -494,7 +523,87 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+                    </Grid>
+                    <!-- end PlaylistContent -->
+
+                    <!-- History content (local-only playback history) -->
+                    <Grid x:Name="HistoryContent" Grid.Row="1" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Search box with placeholder -->
+                        <Grid Grid.Row="0" Margin="6,6,6,4">
+                            <TextBox x:Name="HistorySearchBox"
+                                     Padding="6,4"
+                                     Background="#2a2a2a"
+                                     Foreground="White"
+                                     CaretBrush="White"
+                                     BorderBrush="#555555"
+                                     BorderThickness="1"
+                                     TextChanged="HistorySearch_TextChanged"/>
+                            <TextBlock Text="Search history…"
+                                       Foreground="#777777"
+                                       Margin="10,0,0,0"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text.Length, ElementName=HistorySearchBox}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+
+                        <ListBox x:Name="HistoryBox"
+                                 Grid.Row="1"
+                                 Background="#1a1a1a"
+                                 Foreground="White"
+                                 BorderThickness="0"
+                                 ItemsSource="{Binding HistoryItems}"
+                                 SelectionChanged="HistoryBox_SelectionChanged"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Background"                 Value="Transparent"/>
+                                    <Setter Property="Foreground"                 Value="White"/>
+                                    <Setter Property="Padding"                    Value="0"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="#3a3a3a"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#2a2a2a"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="8,6">
+                                        <TextBlock Text="{Binding DisplayTitle}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   Foreground="White"/>
+                                        <TextBlock Text="{Binding LastPlayedLabel}"
+                                                   FontSize="10"
+                                                   Foreground="#888888"
+                                                   Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                    <!-- end HistoryContent -->
                 </Grid>
+                <!-- end SidePanel -->
 
                 <!-- Collapse/expand tab strip -->
                 <Border x:Name="PlaylistTab"
@@ -570,6 +679,18 @@
                         ValueChanged="VolumeSlider_ValueChanged"/>
             </StackPanel>
         </Grid>
+
+        <!-- Floating controls overlay for maximized/fullscreen. Lives in its own
+             top-level window (Popup) so it renders above the Flyleaf D3D surface;
+             ControlsBar is re-parented here at runtime and back to Row 2 for the
+             normal-windowed docked bar. -->
+        <Popup x:Name="OverlayControlsPopup"
+               PlacementTarget="{Binding ElementName=VideoContainer}"
+               Placement="Relative"
+               AllowsTransparency="True"
+               StaysOpen="True"
+               Focusable="False"
+               PopupAnimation="Fade"/>
     </Grid>
 
     <Window.InputBindings>
