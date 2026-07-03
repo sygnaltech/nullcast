@@ -10,5 +10,8 @@ obj/
 # NuGet
 packages/
 
+# MCP config (may contain secrets / local server config)
+.mcp.json
+
 # HelloWorld test project (can remove this folder entirely if not needed)
 HelloWorld/
