@@ -1293,6 +1293,40 @@ namespace VideoPlayer
             _controlsHideTimer.Start();
         }
 
+        // ──────────────────────────────────────────────────────
+        // Dark title bar (black caption, white text)
+        // ──────────────────────────────────────────────────────
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20; // dark caption buttons
+        private const int DWMWA_CAPTION_COLOR           = 35; // Win11 22000+: caption bg
+        private const int DWMWA_TEXT_COLOR              = 36; // Win11 22000+: caption text
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            ApplyDarkTitleBar(new WindowInteropHelper(this).Handle);
+        }
+
+        private static void ApplyDarkTitleBar(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                int useDark = 1;
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDark, sizeof(int));
+
+                // COLORREF is 0x00BBGGRR.
+                int black = 0x00000000; // caption background
+                int white = 0x00FFFFFF; // caption text
+                DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref black, sizeof(int));
+                DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR,    ref white, sizeof(int));
+            }
+            catch { /* pre-Win11 builds ignore the caption color attrs */ }
+        }
+
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Escape && _isFullscreen)
