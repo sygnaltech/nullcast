@@ -420,6 +420,78 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- ══════════════════════════════════════════════════════
+             Video right-click menu (YouTube-style, translucent)
+             ══════════════════════════════════════════════════════ -->
+        <Style x:Key="VideoMenuItem" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#F1F1F1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                Height="40" Padding="16,0" Margin="0,1">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ContentPresenter ContentSource="Icon" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                                <ContentPresenter ContentSource="Header" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"
+                                                  TextElement.FontSize="14"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1AFFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VideoContextMenuStyle" TargetType="ContextMenu">
+            <Setter Property="Background"         Value="Transparent"/>
+            <Setter Property="BorderThickness"    Value="0"/>
+            <Setter Property="HasDropShadow"      Value="False"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource VideoMenuItem}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="#E61C1C22" CornerRadius="12" Padding="6"
+                                BorderBrush="#1FFFFFFF" BorderThickness="1">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" BlurRadius="24" ShadowDepth="6" Opacity="0.5"/>
+                            </Border.Effect>
+                            <StackPanel IsItemsHost="True"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <ContextMenu x:Key="VideoContextMenu" Style="{StaticResource VideoContextMenuStyle}">
+            <MenuItem Header="Copy video URL" Click="CopyVideoUrl_Click">
+                <MenuItem.Icon>
+                    <Viewbox Width="18" Height="18">
+                        <Canvas Width="24" Height="24">
+                            <Path Stroke="#E6E6E6" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  Data="M9 17H7A5 5 0 0 1 7 7h2 M15 7h2a5 5 0 0 1 0 10h-2 M8 12h8"/>
+                        </Canvas>
+                    </Viewbox>
+                </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Copy video URL at current time" Click="CopyVideoUrlAtTime_Click">
+                <MenuItem.Icon>
+                    <Viewbox Width="18" Height="18">
+                        <Canvas Width="24" Height="24">
+                            <Path Stroke="#E6E6E6" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  Data="M9 17H7A5 5 0 0 1 7 7h2 M15 7h2a5 5 0 0 1 0 10h-2 M8 12h8"/>
+                        </Canvas>
+                    </Viewbox>
+                </MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
     </Window.Resources>
 
     <Grid x:Name="RootGrid">
@@ -475,7 +547,8 @@
                   AllowDrop="True"
                   DragOver="VideoArea_DragOver"
                   Drop="VideoArea_Drop"
-                  MouseLeftButtonDown="VideoArea_MouseLeftButtonDown">
+                  MouseLeftButtonDown="VideoArea_MouseLeftButtonDown"
+                  MouseRightButtonUp="VideoArea_MouseRightButtonUp">
                 <fl:FlyleafHost x:Name="FlyleafPlayer" Background="Black"
                                 MouseBindings="None" KeyBindings="None"
                                 ToggleFullScreenOnDoubleClick="None"

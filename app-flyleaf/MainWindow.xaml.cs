@@ -62,6 +62,7 @@ namespace VideoPlayer
         private Workspace           _selectedWorkspace;
         private Bookmark            _contextMenuTarget;
         private ContextMenu         _playlistContextMenu;
+        private ContextMenu         _videoContextMenu;
         private MenuItem            _toggleMenuItem;
 
         // App settings
@@ -116,6 +117,9 @@ namespace VideoPlayer
 
             PlaylistBox.ContextMenu = _playlistContextMenu;
             PlaylistBox.PreviewMouseRightButtonDown += PlaylistBox_PreviewMouseRightButtonDown;
+
+            // Video right-click menu (styled in XAML resources).
+            _videoContextMenu = (ContextMenu)FindResource("VideoContextMenu");
 
             // Keep the overlay controls alive while the pointer is over them, and
             // keep them positioned when the video area resizes.
@@ -172,8 +176,9 @@ namespace VideoPlayer
                 FlyleafPlayer.OverlayCreated += (ps, pe) =>
                 {
                     App.Log("[Flyleaf] Overlay created, hooking mouse + drop events");
-                    FlyleafPlayer.Overlay.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
-                    FlyleafPlayer.Overlay.MouseMove          += VideoArea_MouseMove;
+                    FlyleafPlayer.Overlay.MouseLeftButtonDown  += VideoArea_MouseLeftButtonDown;
+                    FlyleafPlayer.Overlay.MouseMove            += VideoArea_MouseMove;
+                    FlyleafPlayer.Overlay.MouseRightButtonUp   += VideoArea_MouseRightButtonUp;
                     FlyleafPlayer.Overlay.AllowDrop = true;
                     FlyleafPlayer.Overlay.DragOver += VideoArea_DragOver;
                     FlyleafPlayer.Overlay.Drop     += VideoArea_Drop;
@@ -181,8 +186,9 @@ namespace VideoPlayer
                 FlyleafPlayer.SurfaceCreated += (ps, pe) =>
                 {
                     App.Log("[Flyleaf] Surface created, hooking mouse + drop events");
-                    FlyleafPlayer.Surface.MouseLeftButtonDown += VideoArea_MouseLeftButtonDown;
-                    FlyleafPlayer.Surface.MouseMove          += VideoArea_MouseMove;
+                    FlyleafPlayer.Surface.MouseLeftButtonDown  += VideoArea_MouseLeftButtonDown;
+                    FlyleafPlayer.Surface.MouseMove            += VideoArea_MouseMove;
+                    FlyleafPlayer.Surface.MouseRightButtonUp   += VideoArea_MouseRightButtonUp;
                     // The surface HWND is the real OLE drop target over the video, so
                     // register our handler here (Flyleaf's own OpenOnDrop is disabled).
                     FlyleafPlayer.Surface.AllowDrop = true;
@@ -1095,6 +1101,48 @@ namespace VideoPlayer
         {
             if (_controlsOverlayMode)
                 ShowOverlayControls();
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Right-click menu: copy YouTube link (optionally at current time)
+        // ──────────────────────────────────────────────────────
+
+        private void VideoArea_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentUrl) || _videoContextMenu == null) return;
+
+            _videoContextMenu.PlacementTarget = VideoContainer;
+            _videoContextMenu.Placement       = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+            _videoContextMenu.IsOpen          = true;
+            e.Handled = true;
+        }
+
+        private void CopyVideoUrl_Click(object sender, RoutedEventArgs e)
+        {
+            TrySetClipboard(_currentUrl);
+        }
+
+        private void CopyVideoUrlAtTime_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentUrl)) return;
+
+            var seconds = _player != null ? (int)(_player.CurTime / 10000000L) : 0;
+            var sep     = _currentUrl.Contains('?') ? "&" : "?";
+            TrySetClipboard($"{_currentUrl}{sep}t={seconds}s");
+        }
+
+        private void TrySetClipboard(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            try
+            {
+                Clipboard.SetText(text);
+                App.Log($"[Clipboard] Copied: {text}");
+            }
+            catch (Exception ex)
+            {
+                App.Log($"[Clipboard] Failed: {ex.Message}");
+            }
         }
 
         private void Window_MouseMove(object sender, MouseEventArgs e)
