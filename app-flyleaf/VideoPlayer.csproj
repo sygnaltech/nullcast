@@ -8,15 +8,22 @@
     <RootNamespace>VideoPlayer</RootNamespace>
     <AssemblyName>VideoPlayer</AssemblyName>
     <ApplicationIcon>VideoPlayer.ico</ApplicationIcon>
-    <Version>0.2.8</Version>
+    <Version>0.2.9</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <Resource Include="VideoPlayer.ico"/>
+    <!-- Bundled Instrument Sans (SIL OFL 1.1) — embedded so the UI matches the
+         Indigo Slate reference design on machines without the font installed. -->
+    <Resource Include="Fonts\*.ttf"/>
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="FFmpeg\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Ship the font license alongside the binary (OFL redistribution). -->
+    <Content Include="Fonts\OFL.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

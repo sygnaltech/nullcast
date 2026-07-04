@@ -6,7 +6,11 @@
         Icon="VideoPlayer.ico"
         Height="600" Width="900"
         WindowState="Normal"
-        Background="Black"
+        Background="{DynamicResource BgAppBrush}"
+        FontFamily="{DynamicResource AppFont}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="ClearType"
         Closing="Window_Closing"
         KeyDown="Window_KeyDown"
         StateChanged="Window_StateChanged"
@@ -16,19 +20,39 @@
         PreviewDrop="Window_PreviewDrop">
 
     <Window.Resources>
+        <!-- ══════════════════════════════════════════════════════
+             Indigo Slate palette (from reference design 1b)
+             ══════════════════════════════════════════════════════ -->
+        <FontFamily x:Key="AppFont">pack://application:,,,/Fonts/#Instrument Sans</FontFamily>
+
+        <SolidColorBrush x:Key="BgAppBrush"         Color="#0F1118"/>
+        <SolidColorBrush x:Key="BgMenuBrush"        Color="#151826"/>
+        <SolidColorBrush x:Key="BgControlsBrush"    Color="#141726"/>
+        <SolidColorBrush x:Key="AccentBrush"        Color="#7D97FF"/>
+        <SolidColorBrush x:Key="AccentLightBrush"   Color="#9DB0FF"/>
+        <SolidColorBrush x:Key="AccentTintBrush"    Color="#217D97FF"/>
+        <SolidColorBrush x:Key="TextPrimaryBrush"   Color="#E7E9F1"/>
+        <SolidColorBrush x:Key="TextBrightBrush"    Color="#EEF1FB"/>
+        <SolidColorBrush x:Key="TextMutedBrush"     Color="#848B9F"/>
+        <SolidColorBrush x:Key="TextDimBrush"       Color="#565C6D"/>
+        <SolidColorBrush x:Key="HairlineBrush"      Color="#0FFFFFFF"/>
+        <SolidColorBrush x:Key="SurfaceBrush"       Color="#08FFFFFF"/>
+        <SolidColorBrush x:Key="SurfaceBorderBrush" Color="#1AFFFFFF"/>
+        <SolidColorBrush x:Key="TrackBrush"         Color="#21FFFFFF"/>
+
         <!-- System color overrides for dark theme -->
-        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}"          Color="#1a1a1a"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBarBrushKey}"        Color="#333333"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}"       Color="#ffffff"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"      Color="#4a4a4a"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"  Color="#ffffff"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}"       Color="#888888"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}"          Color="#151826"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBarBrushKey}"        Color="#0F1118"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}"       Color="#E7E9F1"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"      Color="#7D97FF"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"  Color="#0F1118"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}"       Color="#848B9F"/>
 
         <!-- Full ControlTemplate — system color overrides alone aren't reliable on Windows 11
              for the dropdown popup container, so we own the entire visual tree here. -->
         <Style TargetType="{x:Type MenuItem}">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="#E7E9F1"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type MenuItem}">
@@ -59,7 +83,7 @@
                                           Grid.Column="2"
                                           Text="{TemplateBinding InputGestureText}"
                                           Margin="20,4,8,4"
-                                          Foreground="#888888"
+                                          Foreground="#848B9F"
                                           VerticalAlignment="Center"/>
                                 <!-- Dropdown popup with explicit opaque background -->
                                 <Popup x:Name="PART_Popup"
@@ -69,8 +93,8 @@
                                        IsOpen="{TemplateBinding IsSubmenuOpen}"
                                        AllowsTransparency="False"
                                        Focusable="False">
-                                    <Border Background="#1a1a1a"
-                                            BorderBrush="#555555"
+                                    <Border Background="#151826"
+                                            BorderBrush="#2A3042"
                                             BorderThickness="1"
                                             SnapsToDevicePixels="True">
                                         <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
@@ -95,13 +119,13 @@
                                 <Setter TargetName="IconContent" Property="Visibility" Value="Visible"/>
                             </Trigger>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#4a4a4a"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#232838"/>
                             </Trigger>
                             <Trigger Property="IsSubmenuOpen" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#4a4a4a"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#232838"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="#666666"/>
+                                <Setter Property="Foreground" Value="#565C6D"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -110,7 +134,7 @@
         </Style>
 
         <Style TargetType="{x:Type Separator}">
-            <Setter Property="Background" Value="#444444"/>
+            <Setter Property="Background" Value="#1AFFFFFF"/>
             <Setter Property="Margin"     Value="0,2"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -124,8 +148,8 @@
 
         <!-- Dark ComboBoxItem -->
         <Style TargetType="{x:Type ComboBoxItem}">
-            <Setter Property="Background" Value="#2a2a2a"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="#151826"/>
+            <Setter Property="Foreground" Value="#E7E9F1"/>
             <Setter Property="Padding"    Value="6,3"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -137,10 +161,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#3a3a3a"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#232838"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#4a4a4a"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#217D97FF"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -150,9 +174,9 @@
 
         <!-- Dark ComboBox (workspace selector) -->
         <Style TargetType="{x:Type ComboBox}">
-            <Setter Property="Foreground"  Value="White"/>
-            <Setter Property="Background"  Value="#2a2a2a"/>
-            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="Foreground"  Value="#E7E9F1"/>
+            <Setter Property="Background"  Value="#08FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#1AFFFFFF"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type ComboBox}">
@@ -164,9 +188,10 @@
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="{x:Type ToggleButton}">
                                         <Border x:Name="Bd"
-                                                Background="#2a2a2a"
-                                                BorderBrush="#555555"
-                                                BorderThickness="1">
+                                                Background="#08FFFFFF"
+                                                BorderBrush="#1AFFFFFF"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
@@ -174,7 +199,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="1"
                                                            Text="▾"
-                                                           Foreground="#aaaaaa"
+                                                           Foreground="#848B9F"
                                                            HorizontalAlignment="Center"
                                                            VerticalAlignment="Center"
                                                            FontSize="10"/>
@@ -182,7 +207,7 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="#3a3a3a"/>
+                                                <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -198,7 +223,7 @@
                                               Margin="8,3,22,3"
                                               VerticalAlignment="Center"
                                               HorizontalAlignment="Left"
-                                              TextElement.Foreground="White"/>
+                                              TextElement.Foreground="#E7E9F1"/>
 
                             <!-- Dropdown popup -->
                             <Popup x:Name="Popup"
@@ -207,9 +232,10 @@
                                    AllowsTransparency="False"
                                    Focusable="False"
                                    PopupAnimation="Slide">
-                                <Border Background="#2a2a2a"
-                                        BorderBrush="#555555"
+                                <Border Background="#151826"
+                                        BorderBrush="#2A3042"
                                         BorderThickness="1"
+                                        CornerRadius="8"
                                         MinWidth="{TemplateBinding ActualWidth}"
                                         MaxHeight="{TemplateBinding MaxDropDownHeight}">
                                     <ScrollViewer Margin="0">
@@ -218,6 +244,178 @@
                                 </Border>
                             </Popup>
                         </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Underline tab button (Playlist / History) -->
+        <Style x:Key="TabButton" TargetType="Button">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="Foreground"      Value="#848B9F"/>
+            <Setter Property="BorderBrush"     Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="FontSize"        Value="14"/>
+            <Setter Property="FontWeight"      Value="SemiBold"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="Padding"         Value="2,15"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Small surface icon button (refresh, etc.) -->
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Background"  Value="#08FFFFFF"/>
+            <Setter Property="Foreground"  Value="#848B9F"/>
+            <Setter Property="Cursor"      Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="#1AFFFFFF"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Accent pill button (Connect to Playlist) -->
+        <Style x:Key="AccentButton" TargetType="Button">
+            <Setter Property="Background"  Value="#7D97FF"/>
+            <Setter Property="Foreground"  Value="#0F1118"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+            <Setter Property="FontSize"    Value="12"/>
+            <Setter Property="Cursor"      Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="7" Padding="12,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#8FA6FF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Text-only button (Sign out) -->
+        <Style x:Key="TextButton" TargetType="Button">
+            <Setter Property="Background"  Value="Transparent"/>
+            <Setter Property="Foreground"  Value="#848B9F"/>
+            <Setter Property="FontSize"    Value="13"/>
+            <Setter Property="Cursor"      Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#E7E9F1"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Thin bar slider: rounded track, indigo fill, round white thumb -->
+        <Style x:Key="BarSlider" TargetType="Slider">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center" Height="14">
+                            <Border Height="4" CornerRadius="3" Background="#21FFFFFF" VerticalAlignment="Center"/>
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Height="4" CornerRadius="3" Background="#7D97FF" VerticalAlignment="Center"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Width="13" Height="13" CornerRadius="7" Background="#FFFFFF">
+                                                    <Border.Effect>
+                                                        <DropShadowEffect Color="#000000" BlurRadius="5" ShadowDepth="1" Opacity="0.5"/>
+                                                    </Border.Effect>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- List item: rounded card + left accent bar for the selected (playing) row -->
+        <Style x:Key="ListItemContainer" TargetType="ListBoxItem">
+            <Setter Property="Foreground"                 Value="#E7E9F1"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding"                    Value="0"/>
+            <Setter Property="Margin"                     Value="0,1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="10">
+                            <Grid>
+                                <Border x:Name="AccentBar" Width="3" HorizontalAlignment="Left"
+                                        Margin="0,13" CornerRadius="2" Background="#7D97FF"
+                                        Visibility="Collapsed"/>
+                                <ContentPresenter/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#217D97FF"/>
+                                <Setter TargetName="AccentBar" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -232,42 +430,38 @@
         </Grid.RowDefinitions>
 
         <!-- Top bar: Menu (left) + Login status (right) -->
-        <DockPanel x:Name="TopBar" Grid.Row="0" Background="#333" LastChildFill="False">
-            <Menu x:Name="MenuBar" DockPanel.Dock="Left" Background="Transparent" Foreground="White" VerticalAlignment="Center">
-                <MenuItem Header="_File">
-                    <MenuItem Header="_Open URL..." Click="OpenUrl_Click" InputGestureText="Ctrl+O"/>
-                    <Separator/>
-                    <MenuItem Header="E_xit" Click="Exit_Click"/>
-                </MenuItem>
-            </Menu>
+        <Border x:Name="TopBar" Grid.Row="0" Background="#151826"
+                BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="False" Height="38">
+                <Menu x:Name="MenuBar" DockPanel.Dock="Left" Background="Transparent"
+                      Foreground="#848B9F" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <MenuItem Header="_File">
+                        <MenuItem Header="_Open URL..." Click="OpenUrl_Click" InputGestureText="Ctrl+O"/>
+                        <Separator/>
+                        <MenuItem Header="E_xit" Click="Exit_Click"/>
+                    </MenuItem>
+                </Menu>
 
-            <!-- Login status -->
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                <TextBlock x:Name="UserDisplayName"
-                           Foreground="#aaaaaa"
-                           VerticalAlignment="Center"
-                           Margin="0,0,10,0"
-                           FontSize="12"
-                           Visibility="Collapsed"/>
-                <Button x:Name="ConnectButton"
-                        Content="Connect to Playlist"
-                        Click="Connect_Click"
-                        Padding="8,3"
-                        Background="#3a3a3a"
-                        Foreground="White"
-                        BorderBrush="#555"
-                        FontSize="12"/>
-                <Button x:Name="SignOutButton"
-                        Content="Sign out"
-                        Click="SignOut_Click"
-                        Padding="8,3"
-                        Background="Transparent"
-                        Foreground="#888888"
-                        BorderThickness="0"
-                        FontSize="12"
-                        Visibility="Collapsed"/>
-            </StackPanel>
-        </DockPanel>
+                <!-- Login status -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock x:Name="UserDisplayName"
+                               Foreground="#E7E9F1"
+                               VerticalAlignment="Center"
+                               Margin="0,0,16,0"
+                               FontSize="13"
+                               Visibility="Collapsed"/>
+                    <Button x:Name="ConnectButton"
+                            Content="Connect to Playlist"
+                            Click="Connect_Click"
+                            Style="{StaticResource AccentButton}"/>
+                    <Button x:Name="SignOutButton"
+                            Content="Sign out"
+                            Click="SignOut_Click"
+                            Style="{StaticResource TextButton}"
+                            Visibility="Collapsed"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
 
         <!-- Row 1: Video area (left) + Playlist column (right) -->
         <Grid Grid.Row="1">
@@ -290,8 +484,8 @@
                 <!-- Loading/Status overlay -->
                 <TextBlock x:Name="StatusText"
                            Text="Press Ctrl+O or File > Open URL to load a video"
-                           Foreground="Gray"
-                           FontSize="18"
+                           Foreground="#848B9F"
+                           FontSize="16"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            IsHitTestVisible="False"/>
@@ -305,31 +499,33 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Side panel: tab header + swappable Playlist / History content -->
-                <Grid x:Name="SidePanel"
-                      Grid.Column="0"
-                      Width="260"
-                      Background="#1a1a1a"
-                      Visibility="Collapsed">
+                <Border x:Name="SidePanel"
+                        Grid.Column="0"
+                        Width="325"
+                        Background="#0F1118"
+                        BorderBrush="#0FFFFFFF"
+                        BorderThickness="1,0,0,0"
+                        Visibility="Collapsed">
+                  <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Tab header -->
-                    <Grid Grid.Row="0" Background="#111" Height="30">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Button x:Name="PlaylistTabButton" Grid.Column="0" Content="Playlist"
-                                Click="ShowPlaylistTab_Click"
-                                Background="#1a1a1a" Foreground="White"
-                                BorderThickness="0" FontSize="12" Cursor="Hand"/>
-                        <Button x:Name="HistoryTabButton" Grid.Column="1" Content="History"
-                                Click="ShowHistoryTab_Click"
-                                Background="#111" Foreground="#888888"
-                                BorderThickness="0" FontSize="12" Cursor="Hand"/>
-                    </Grid>
+                    <!-- Tab header (underline tabs) -->
+                    <Border Grid.Row="0" Background="#0F1118"
+                            BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
+                        <StackPanel Orientation="Horizontal" Margin="20,0">
+                            <Button x:Name="PlaylistTabButton" Content="Playlist"
+                                    Click="ShowPlaylistTab_Click"
+                                    Style="{StaticResource TabButton}"
+                                    Foreground="#E7E9F1" BorderBrush="#7D97FF"
+                                    Margin="0,0,30,0"/>
+                            <Button x:Name="HistoryTabButton" Content="History"
+                                    Click="ShowHistoryTab_Click"
+                                    Style="{StaticResource TabButton}"/>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Playlist content (online bookmarks; requires sign-in) -->
                     <Grid x:Name="PlaylistContent"
@@ -344,24 +540,24 @@
                         </Grid.RowDefinitions>
 
                     <!-- Workspace selector -->
-                    <Grid Grid.Row="0" Background="#2a2a2a">
+                    <Grid Grid.Row="0" Margin="20,16,20,14">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <ComboBox x:Name="WorkspaceCombo"
                                   Grid.Column="0"
-                                  Margin="6,5,4,5"
+                                  Height="38"
+                                  Margin="0,0,10,0"
+                                  FontSize="13"
                                   DisplayMemberPath="Name"
                                   SelectionChanged="WorkspaceCombo_SelectionChanged"/>
                         <Button x:Name="RefreshButton"
                                 Grid.Column="1"
                                 Content="↻"
-                                Width="28" Height="24"
-                                Margin="0,0,6,0"
-                                Background="#333"
-                                Foreground="White"
-                                BorderBrush="#555"
+                                Width="38" Height="38"
+                                FontSize="15"
+                                Style="{StaticResource IconButton}"
                                 ToolTip="Refresh playlist"
                                 Click="RefreshPlaylist_Click"/>
                     </Grid>
@@ -378,22 +574,23 @@
                     <!-- Bookmark list -->
                     <ListBox x:Name="PlaylistBox"
                              Grid.Row="2"
-                             Background="#1a1a1a"
-                             Foreground="White"
+                             Background="Transparent"
+                             Foreground="#E7E9F1"
                              BorderThickness="0"
+                             Padding="8,2,8,8"
                              ItemsSource="{Binding PlaylistItems}"
                              SelectionChanged="PlaylistBox_SelectionChanged"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <!-- Dark 6px scrollbar scoped to this ListBox only -->
+                        <!-- Dark 9px scrollbar scoped to this ListBox only -->
                         <ListBox.Resources>
                             <Style TargetType="{x:Type ScrollBar}">
-                                <Setter Property="Width"      Value="6"/>
-                                <Setter Property="MinWidth"   Value="6"/>
-                                <Setter Property="Background" Value="#1a1a1a"/>
+                                <Setter Property="Width"      Value="9"/>
+                                <Setter Property="MinWidth"   Value="9"/>
+                                <Setter Property="Background" Value="Transparent"/>
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type ScrollBar}">
-                                            <Grid Background="#1a1a1a" Width="6">
+                                            <Grid Background="Transparent" Width="9">
                                                 <Track x:Name="PART_Track" IsDirectionReversed="True">
                                                     <Track.DecreaseRepeatButton>
                                                         <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Height="0"/>
@@ -402,10 +599,10 @@
                                                         <Thumb>
                                                             <Thumb.Template>
                                                                 <ControlTemplate TargetType="{x:Type Thumb}">
-                                                                    <Border x:Name="ThumbBd" Background="#444444" CornerRadius="3"/>
+                                                                    <Border x:Name="ThumbBd" Background="#24FFFFFF" CornerRadius="4" Margin="2,0"/>
                                                                     <ControlTemplate.Triggers>
                                                                         <Trigger Property="IsMouseOver" Value="True">
-                                                                            <Setter TargetName="ThumbBd" Property="Background" Value="#555555"/>
+                                                                            <Setter TargetName="ThumbBd" Property="Background" Value="#3DFFFFFF"/>
                                                                         </Trigger>
                                                                     </ControlTemplate.Triggers>
                                                                 </ControlTemplate>
@@ -423,31 +620,18 @@
                             </Style>
                         </ListBox.Resources>
                         <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="Background"                 Value="Transparent"/>
-                                <Setter Property="Foreground"                 Value="White"/>
-                                <Setter Property="Padding"                    Value="0"/>
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#3a3a3a"/>
-                                    </Trigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#2a2a2a"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
+                            <StaticResource ResourceKey="ListItemContainer"/>
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Grid>
+                                <Grid Margin="11,4">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="*"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
                                     <!-- Content row -->
-                                    <Grid Grid.Row="0" Margin="8,6,8,4">
+                                    <Grid Grid.Row="0" Margin="8,10,8,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -455,12 +639,14 @@
                                         <StackPanel Grid.Column="0">
                                             <TextBlock Text="{Binding Title}"
                                                        TextWrapping="Wrap"
-                                                       FontSize="12"
-                                                       Foreground="White"/>
+                                                       FontSize="14"
+                                                       FontWeight="Medium"
+                                                       LineHeight="19"
+                                                       Foreground="#E7E9F1"/>
                                             <TextBlock Text="{Binding PositionLabel}"
-                                                       FontSize="10"
-                                                       Foreground="#888888"
-                                                       Margin="0,3,0,0">
+                                                       FontSize="12"
+                                                       Foreground="#848B9F"
+                                                       Margin="0,8,0,0">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
                                                         <Style.Triggers>
@@ -493,28 +679,19 @@
                                         </TextBlock>
                                     </Grid>
 
-                                    <!-- Progress bar at bottom (always visible, green fill) -->
+                                    <!-- Progress bar at bottom (indigo fill) -->
                                     <ProgressBar Grid.Row="1"
                                                  Value="{Binding ProgressPercent, Mode=OneWay}"
                                                  Maximum="100"
-                                                 Height="4"
-                                                 Margin="8,0,8,5"
+                                                 Height="3"
+                                                 Margin="8,0,8,4"
+                                                 Background="#21FFFFFF"
                                                  IsHitTestVisible="False">
-                                        <ProgressBar.Style>
-                                            <Style TargetType="ProgressBar">
-                                                <Setter Property="Background" Value="#2a2a2a"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsCompleted}" Value="True">
-                                                        <Setter Property="Background" Value="#1a4a1a"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </ProgressBar.Style>
                                         <ProgressBar.Template>
                                             <ControlTemplate TargetType="ProgressBar">
                                                 <Grid>
                                                     <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="2"/>
-                                                    <Border x:Name="PART_Indicator" Background="#44aa44" HorizontalAlignment="Left" CornerRadius="2"/>
+                                                    <Border x:Name="PART_Indicator" Background="#7D97FF" HorizontalAlignment="Left" CornerRadius="2"/>
                                                 </Grid>
                                             </ControlTemplate>
                                         </ProgressBar.Template>
@@ -534,18 +711,23 @@
                         </Grid.RowDefinitions>
 
                         <!-- Search box with placeholder -->
-                        <Grid Grid.Row="0" Margin="6,6,6,4">
+                        <Grid Grid.Row="0" Margin="20,16,20,10">
+                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
+                                    BorderThickness="1" CornerRadius="8"/>
                             <TextBox x:Name="HistorySearchBox"
-                                     Padding="6,4"
-                                     Background="#2a2a2a"
-                                     Foreground="White"
-                                     CaretBrush="White"
-                                     BorderBrush="#555555"
-                                     BorderThickness="1"
+                                     Height="38"
+                                     VerticalContentAlignment="Center"
+                                     Padding="12,0"
+                                     FontSize="13"
+                                     Background="Transparent"
+                                     Foreground="#E7E9F1"
+                                     CaretBrush="#E7E9F1"
+                                     BorderThickness="0"
                                      TextChanged="HistorySearch_TextChanged"/>
                             <TextBlock Text="Search history…"
-                                       Foreground="#777777"
-                                       Margin="10,0,0,0"
+                                       Foreground="#565C6D"
+                                       Margin="13,0,0,0"
+                                       FontSize="13"
                                        VerticalAlignment="Center"
                                        IsHitTestVisible="False">
                                 <TextBlock.Style>
@@ -563,59 +745,50 @@
 
                         <ListBox x:Name="HistoryBox"
                                  Grid.Row="1"
-                                 Background="#1a1a1a"
-                                 Foreground="White"
+                                 Background="Transparent"
+                                 Foreground="#E7E9F1"
                                  BorderThickness="0"
+                                 Padding="8,2,8,8"
+                                 ItemContainerStyle="{StaticResource ListItemContainer}"
                                  ItemsSource="{Binding HistoryItems}"
                                  SelectionChanged="HistoryBox_SelectionChanged"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="Background"                 Value="Transparent"/>
-                                    <Setter Property="Foreground"                 Value="White"/>
-                                    <Setter Property="Padding"                    Value="0"/>
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="#3a3a3a"/>
-                                        </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="#2a2a2a"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Margin="8,6">
+                                    <StackPanel Margin="11,10">
                                         <TextBlock Text="{Binding DisplayTitle}"
                                                    TextWrapping="Wrap"
-                                                   FontSize="12"
-                                                   Foreground="White"/>
+                                                   FontSize="14"
+                                                   FontWeight="Medium"
+                                                   LineHeight="19"
+                                                   Foreground="#E7E9F1"/>
                                         <TextBlock Text="{Binding LastPlayedLabel}"
-                                                   FontSize="10"
-                                                   Foreground="#888888"
-                                                   Margin="0,3,0,0"/>
+                                                   FontSize="12"
+                                                   Foreground="#848B9F"
+                                                   Margin="0,8,0,0"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
                     </Grid>
                     <!-- end HistoryContent -->
-                </Grid>
+                  </Grid>
+                </Border>
                 <!-- end SidePanel -->
 
                 <!-- Collapse/expand tab strip -->
                 <Border x:Name="PlaylistTab"
                         Grid.Column="1"
                         Width="18"
-                        Background="#252525"
+                        Background="#0F1118"
+                        BorderBrush="#0FFFFFFF"
+                        BorderThickness="1,0,0,0"
                         Visibility="Collapsed">
                     <Button x:Name="CollapseToggleButton"
                             Content="❮"
                             Background="Transparent"
                             BorderThickness="0"
-                            Foreground="#888888"
+                            Foreground="#848B9F"
                             FontSize="11"
                             VerticalAlignment="Center"
                             HorizontalAlignment="Center"
@@ -626,7 +799,7 @@
         </Grid>
 
         <!-- Controls -->
-        <Grid x:Name="ControlsBar" Grid.Row="2" Background="#222" Height="50">
+        <Grid x:Name="ControlsBar" Grid.Row="2" Background="#141726" Height="74">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -634,20 +807,41 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Play/Pause Button -->
+            <!-- Top hairline -->
+            <Border Grid.ColumnSpan="4" VerticalAlignment="Top" Height="1" Background="#0FFFFFFF"/>
+
+            <!-- Play/Pause Button (circular accent) -->
             <Button x:Name="PlayPauseButton"
                     Grid.Column="0"
                     Content="▶"
-                    Width="40" Height="35"
-                    Margin="10,0"
-                    FontSize="16"
-                    Click="PlayPause_Click"/>
+                    Width="52" Height="52"
+                    Margin="22,0,0,0"
+                    FontSize="17"
+                    Foreground="#0F1118"
+                    Click="PlayPause_Click">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="#7D97FF" CornerRadius="26">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#7D97FF" BlurRadius="20" ShadowDepth="4" Opacity="0.35"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#8FA6FF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
 
             <!-- Progress Slider -->
             <Slider x:Name="ProgressSlider"
                     Grid.Column="1"
+                    Style="{StaticResource BarSlider}"
                     VerticalAlignment="Center"
-                    Margin="10,0"
+                    Margin="22,0"
                     Minimum="0"
                     Maximum="100"
                     IsMoveToPointEnabled="True"
@@ -657,21 +851,26 @@
             <!-- Time Display -->
             <TextBlock x:Name="TimeDisplay"
                        Grid.Column="2"
-                       Foreground="White"
+                       Foreground="#848B9F"
+                       FontSize="13"
                        VerticalAlignment="Center"
-                       Margin="10,0"
+                       Margin="0,0,4,0"
                        Text="00:00 / 00:00"/>
 
             <!-- Volume -->
-            <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="10,0">
-                <TextBlock Text="🔊"
-                           Foreground="White"
-                           VerticalAlignment="Center"
-                           FontSize="14"/>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="16,0,22,0" VerticalAlignment="Center">
+                <Viewbox Width="20" Height="20" VerticalAlignment="Center">
+                    <Canvas Width="24" Height="24">
+                        <Path Stroke="#848B9F" StrokeThickness="1.8"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Data="M11 5 6 9H3v6h3l5 4V5Z M15.5 8.5a5 5 0 0 1 0 7 M18.8 6a9 9 0 0 1 0 12"/>
+                    </Canvas>
+                </Viewbox>
                 <Slider x:Name="VolumeSlider"
-                        Width="80"
+                        Style="{StaticResource BarSlider}"
+                        Width="96"
                         VerticalAlignment="Center"
-                        Margin="5,0,10,0"
+                        Margin="12,0,0,0"
                         Minimum="0"
                         Maximum="200"
                         Value="100"

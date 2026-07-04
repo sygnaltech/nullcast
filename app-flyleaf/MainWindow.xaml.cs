@@ -98,14 +98,15 @@ namespace VideoPlayer
             deleteMenuItem.Click  += PlaylistItem_Delete_Click;
 
             var menuItemStyle = new Style(typeof(MenuItem));
-            menuItemStyle.Setters.Add(new Setter(MenuItem.ForegroundProperty, Brushes.White));
+            menuItemStyle.Setters.Add(new Setter(MenuItem.ForegroundProperty,
+                new SolidColorBrush(Color.FromRgb(0xE7, 0xE9, 0xF1))));
             menuItemStyle.Setters.Add(new Setter(MenuItem.BackgroundProperty,
-                new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11))));
+                new SolidColorBrush(Color.FromRgb(0x15, 0x18, 0x26))));
 
             _playlistContextMenu = new ContextMenu
             {
-                Background   = new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11)),
-                BorderBrush  = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                Background   = new SolidColorBrush(Color.FromRgb(0x15, 0x18, 0x26)),
+                BorderBrush  = new SolidColorBrush(Color.FromRgb(0x2A, 0x30, 0x42)),
                 BorderThickness = new Thickness(1),
                 ItemContainerStyle = menuItemStyle,
             };
@@ -417,11 +418,15 @@ namespace VideoPlayer
             PlaylistContent.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
             HistoryContent.Visibility  = history ? Visibility.Visible   : Visibility.Collapsed;
 
-            // Active tab reads brighter; inactive dims.
-            PlaylistTabButton.Background = new SolidColorBrush(history ? Color.FromRgb(0x11, 0x11, 0x11) : Color.FromRgb(0x1a, 0x1a, 0x1a));
-            PlaylistTabButton.Foreground = history ? new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)) : Brushes.White;
-            HistoryTabButton.Background  = new SolidColorBrush(history ? Color.FromRgb(0x1a, 0x1a, 0x1a) : Color.FromRgb(0x11, 0x11, 0x11));
-            HistoryTabButton.Foreground  = history ? Brushes.White : new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+            // Underline tabs: active reads bright with an accent underline, inactive dims.
+            var accent  = (Brush)FindResource("AccentBrush");
+            var primary = (Brush)FindResource("TextPrimaryBrush");
+            var muted   = (Brush)FindResource("TextMutedBrush");
+
+            PlaylistTabButton.Foreground  = history ? muted : primary;
+            PlaylistTabButton.BorderBrush  = history ? Brushes.Transparent : accent;
+            HistoryTabButton.Foreground   = history ? primary : muted;
+            HistoryTabButton.BorderBrush   = history ? accent : Brushes.Transparent;
 
             if (history) RefreshHistoryView();
         }
@@ -1106,8 +1111,8 @@ namespace VideoPlayer
         {
             var menu = new ContextMenu
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x1a, 0x1a)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+                Background = new SolidColorBrush(Color.FromRgb(0x15, 0x18, 0x26)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x30, 0x42)),
                 BorderThickness = new Thickness(1),
             };
 
@@ -1115,7 +1120,7 @@ namespace VideoPlayer
             {
                 Header = "Quality",
                 IsEnabled = false,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x84, 0x8B, 0x9F)),
             };
             menu.Items.Add(headerItem);
             menu.Items.Add(new Separator());
@@ -1126,8 +1131,8 @@ namespace VideoPlayer
                 {
                     Header = label,
                     IsChecked = _selectedHeight == height,
-                    Foreground = Brushes.White,
-                    Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x1a, 0x1a)),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0xE7, 0xE9, 0xF1)),
+                    Background = new SolidColorBrush(Color.FromRgb(0x15, 0x18, 0x26)),
                 };
                 var h = height;
                 item.Click += (s, ev) =>
@@ -1318,11 +1323,11 @@ namespace VideoPlayer
                 int useDark = 1;
                 DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDark, sizeof(int));
 
-                // COLORREF is 0x00BBGGRR.
-                int black = 0x00000000; // caption background
-                int white = 0x00FFFFFF; // caption text
-                DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref black, sizeof(int));
-                DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR,    ref white, sizeof(int));
+                // COLORREF is 0x00BBGGRR. Caption bg = #0F1118 to match the app.
+                int captionBg = 0x0018110F; // #0F1118
+                int white     = 0x00FFFFFF; // caption text
+                DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref captionBg, sizeof(int));
+                DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR,    ref white,     sizeof(int));
             }
             catch { /* pre-Win11 builds ignore the caption color attrs */ }
         }
