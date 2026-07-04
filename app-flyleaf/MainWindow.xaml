@@ -58,6 +58,7 @@
                     <ControlTemplate TargetType="{x:Type MenuItem}">
                         <Border x:Name="Bd"
                                 Background="{TemplateBinding Background}"
+                                CornerRadius="6"
                                 SnapsToDevicePixels="True">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -68,7 +69,7 @@
                                 <!-- Icon area — hidden by default; shown in submenus for text indent -->
                                 <ContentPresenter x:Name="IconContent"
                                                  Grid.Column="0"
-                                                 Width="22" Margin="3,0"
+                                                 Width="18" Margin="10,0,0,0"
                                                  ContentSource="Icon"
                                                  VerticalAlignment="Center"
                                                  Visibility="Collapsed"/>
@@ -76,27 +77,33 @@
                                 <ContentPresenter Grid.Column="1"
                                                  ContentSource="Header"
                                                  RecognizesAccessKey="True"
-                                                 Margin="8,4"
+                                                 Margin="12,8"
                                                  VerticalAlignment="Center"/>
                                 <!-- Keyboard shortcut label -->
                                 <TextBlock x:Name="GestureText"
                                           Grid.Column="2"
                                           Text="{TemplateBinding InputGestureText}"
-                                          Margin="20,4,8,4"
+                                          Margin="24,8,14,8"
                                           Foreground="#848B9F"
                                           VerticalAlignment="Center"/>
-                                <!-- Dropdown popup with explicit opaque background -->
+                                <!-- Dropdown popup: translucent, rounded, matches the video menu -->
                                 <Popup x:Name="PART_Popup"
                                        Grid.Column="0" Grid.ColumnSpan="3"
                                        Placement="Bottom"
-                                       HorizontalOffset="-1"
+                                       HorizontalOffset="-1" VerticalOffset="3"
                                        IsOpen="{TemplateBinding IsSubmenuOpen}"
-                                       AllowsTransparency="False"
+                                       AllowsTransparency="True"
                                        Focusable="False">
-                                    <Border Background="#151826"
-                                            BorderBrush="#2A3042"
+                                    <Border Background="#E61C1C22"
+                                            BorderBrush="#1FFFFFFF"
                                             BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="6"
+                                            Margin="8"
                                             SnapsToDevicePixels="True">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#000000" BlurRadius="24" ShadowDepth="6" Opacity="0.5"/>
+                                        </Border.Effect>
                                         <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
                                     </Border>
                                 </Popup>
@@ -119,10 +126,10 @@
                                 <Setter TargetName="IconContent" Property="Visibility" Value="Visible"/>
                             </Trigger>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#232838"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#1AFFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsSubmenuOpen" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#232838"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#1AFFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Foreground" Value="#565C6D"/>
@@ -161,7 +168,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#232838"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#1AFFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#217D97FF"/>
@@ -349,14 +356,18 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
-                        <Grid VerticalAlignment="Center" Height="14">
+                        <!-- Height sets the clickable band; the visible bar stays 4px -->
+                        <Grid VerticalAlignment="Center" Height="44" Background="Transparent">
                             <Border Height="4" CornerRadius="3" Background="#21FFFFFF" VerticalAlignment="Center"/>
                             <Track x:Name="PART_Track">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="Slider.DecreaseLarge">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
-                                                <Border Height="4" CornerRadius="3" Background="#7D97FF" VerticalAlignment="Center"/>
+                                                <!-- Transparent full-height wrapper = tall hit area -->
+                                                <Border Background="Transparent">
+                                                    <Border Height="4" CornerRadius="3" Background="#7D97FF" VerticalAlignment="Center"/>
+                                                </Border>
                                             </ControlTemplate>
                                         </RepeatButton.Template>
                                     </RepeatButton>
@@ -374,10 +385,14 @@
                                     <Thumb>
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
-                                                <Border Width="13" Height="13" CornerRadius="7" Background="#FFFFFF">
-                                                    <Border.Effect>
-                                                        <DropShadowEffect Color="#000000" BlurRadius="5" ShadowDepth="1" Opacity="0.5"/>
-                                                    </Border.Effect>
+                                                <!-- 13x44 transparent grab area around a 13px dot -->
+                                                <Border Width="13" Height="44" Background="Transparent">
+                                                    <Border Width="13" Height="13" CornerRadius="7" Background="#FFFFFF"
+                                                            VerticalAlignment="Center">
+                                                        <Border.Effect>
+                                                            <DropShadowEffect Color="#000000" BlurRadius="5" ShadowDepth="1" Opacity="0.5"/>
+                                                        </Border.Effect>
+                                                    </Border>
                                                 </Border>
                                             </ControlTemplate>
                                         </Thumb.Template>
@@ -475,7 +490,7 @@
                         <Canvas Width="24" Height="24">
                             <Path Stroke="#E6E6E6" StrokeThickness="2"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                  Data="M9 17H7A5 5 0 0 1 7 7h2 M15 7h2a5 5 0 0 1 0 10h-2 M8 12h8"/>
+                                  Data="M10 13 a5 5 0 0 0 7.54 0.54 l3 -3 a5 5 0 0 0 -7.07 -7.07 l-1.72 1.71 M14 11 a5 5 0 0 0 -7.54 -0.54 l-3 3 a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/>
                         </Canvas>
                     </Viewbox>
                 </MenuItem.Icon>
@@ -486,7 +501,7 @@
                         <Canvas Width="24" Height="24">
                             <Path Stroke="#E6E6E6" StrokeThickness="2"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                  Data="M9 17H7A5 5 0 0 1 7 7h2 M15 7h2a5 5 0 0 1 0 10h-2 M8 12h8"/>
+                                  Data="M10 13 a5 5 0 0 0 7.54 0.54 l3 -3 a5 5 0 0 0 -7.07 -7.07 l-1.72 1.71 M14 11 a5 5 0 0 0 -7.54 -0.54 l-3 3 a5 5 0 0 0 7.07 7.07 l1.71 -1.71"/>
                         </Canvas>
                     </Viewbox>
                 </MenuItem.Icon>
