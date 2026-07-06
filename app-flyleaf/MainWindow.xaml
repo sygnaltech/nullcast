@@ -563,7 +563,8 @@
                   DragOver="VideoArea_DragOver"
                   Drop="VideoArea_Drop"
                   MouseLeftButtonDown="VideoArea_MouseLeftButtonDown"
-                  MouseRightButtonUp="VideoArea_MouseRightButtonUp">
+                  MouseRightButtonUp="VideoArea_MouseRightButtonUp"
+                  MouseWheel="VideoArea_MouseWheel">
                 <fl:FlyleafHost x:Name="FlyleafPlayer" Background="Black"
                                 MouseBindings="None" KeyBindings="None"
                                 ToggleFullScreenOnDoubleClick="None"

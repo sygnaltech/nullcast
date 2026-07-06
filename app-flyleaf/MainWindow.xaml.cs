@@ -179,6 +179,7 @@ namespace VideoPlayer
                     FlyleafPlayer.Overlay.MouseLeftButtonDown  += VideoArea_MouseLeftButtonDown;
                     FlyleafPlayer.Overlay.MouseMove            += VideoArea_MouseMove;
                     FlyleafPlayer.Overlay.MouseRightButtonUp   += VideoArea_MouseRightButtonUp;
+                    FlyleafPlayer.Overlay.MouseWheel           += VideoArea_MouseWheel;
                     FlyleafPlayer.Overlay.AllowDrop = true;
                     FlyleafPlayer.Overlay.DragOver += VideoArea_DragOver;
                     FlyleafPlayer.Overlay.Drop     += VideoArea_Drop;
@@ -189,6 +190,7 @@ namespace VideoPlayer
                     FlyleafPlayer.Surface.MouseLeftButtonDown  += VideoArea_MouseLeftButtonDown;
                     FlyleafPlayer.Surface.MouseMove            += VideoArea_MouseMove;
                     FlyleafPlayer.Surface.MouseRightButtonUp   += VideoArea_MouseRightButtonUp;
+                    FlyleafPlayer.Surface.MouseWheel           += VideoArea_MouseWheel;
                     // The surface HWND is the real OLE drop target over the video, so
                     // register our handler here (Flyleaf's own OpenOnDrop is disabled).
                     FlyleafPlayer.Surface.AllowDrop = true;
@@ -1149,6 +1151,23 @@ namespace VideoPlayer
         {
             if (_controlsOverlayMode)
                 ShowOverlayControls();
+        }
+
+        /// <summary>Mouse wheel over the video adjusts volume (~5% per notch).</summary>
+        private void VideoArea_MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (_player == null || e.Delta == 0) return;
+
+            var step = 5.0 * (e.Delta / 120.0); // 120 = one wheel notch
+            VolumeSlider.Value = Math.Clamp(
+                VolumeSlider.Value + step, VolumeSlider.Minimum, VolumeSlider.Maximum);
+
+            // Reveal the (auto-hiding) controls so the change is visible in
+            // maximized/fullscreen; in normal windowed mode the bar is always shown.
+            if (_controlsOverlayMode)
+                ShowOverlayControls();
+
+            e.Handled = true;
         }
 
         // ──────────────────────────────────────────────────────
