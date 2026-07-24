@@ -411,6 +411,9 @@ namespace VideoPlayer
                     App.Log($"[Playlist] Startup load failed: {ex.Message}");
                 }
             }
+
+            // Remote Control API (F-654) — additive local control surface. See MainWindow.Api.cs.
+            InitRemoteControl();
         }
 
         private async Task LoadSettingsAsync()
@@ -1365,6 +1368,7 @@ namespace VideoPlayer
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             _timer?.Stop();
+            ShutdownRemoteControl();
 
             // Best-effort position save on close
             if (_activeMuid != null && _api != null && _player?.Status == Status.Playing)

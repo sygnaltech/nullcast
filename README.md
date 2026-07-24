@@ -37,6 +37,9 @@ This repo contains **two** implementations of the player. They are independent
 - **Fullscreen** (F11), **drag-and-drop** to open, **mouse-wheel volume**,
   right-click **"copy video URL"**.
 - **Pin to all virtual desktops** and always-on-top support.
+- **Remote control API** — a local HTTP + Server-Sent-Events interface so other apps
+  (voice agents, a control panel, scripts) can play/pause, change volume, start specific
+  items, and read live playback state. See **[`VIDEO-PLAYER-API.md`](VIDEO-PLAYER-API.md)**.
 - Indigo Slate visual theme with bundled **Instrument Sans** font.
 
 ## Requirements
