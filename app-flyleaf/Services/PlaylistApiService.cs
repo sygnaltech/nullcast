@@ -26,9 +26,14 @@ namespace VideoPlayer.Services
             return JsonSerializer.Deserialize<List<Workspace>>(json) ?? new();
         }
 
-        public async Task<List<Bookmark>> GetYouTubeBookmarksAsync(int workspaceId)
+        /// <summary>
+        /// All bookmarks for a workspace, regardless of source type. The server classifies
+        /// each URL (youtube / reddit / facebook / … / web); we no longer filter to youtube
+        /// so the in-app playlist shows every source the player can now play.
+        /// </summary>
+        public async Task<List<Bookmark>> GetBookmarksAsync(int workspaceId)
         {
-            var json = await GetAsync($"/api/v1/bookmarks?workspace_id={workspaceId}&type=youtube");
+            var json = await GetAsync($"/api/v1/bookmarks?workspace_id={workspaceId}");
             return JsonSerializer.Deserialize<List<Bookmark>>(json) ?? new();
         }
 

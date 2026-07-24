@@ -8,7 +8,7 @@
     <RootNamespace>VideoPlayer</RootNamespace>
     <AssemblyName>VideoPlayer</AssemblyName>
     <ApplicationIcon>VideoPlayer.ico</ApplicationIcon>
-    <Version>0.2.14</Version>
+    <Version>0.2.15</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +34,8 @@
     <PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="8.0.1" />
     <!-- Windows DPAPI for encrypting service secrets (Plex token) at rest. -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <!-- Robust RSS/Atom parsing (incl. iTunes podcast namespace) for the podcast tab. -->
+    <PackageReference Include="CodeHollow.FeedReader" Version="1.2.6" />
   </ItemGroup>
 
 </Project>

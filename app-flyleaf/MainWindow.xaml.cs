@@ -17,12 +17,13 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using FlyleafLib;
 using FlyleafLib.MediaPlayer;
+using FlyleafLib.MediaFramework.MediaStream;
 using VideoPlayer.Models;
 using VideoPlayer.Services;
 
 namespace VideoPlayer
 {
-    public enum SidebarTab { Playlist, History, Plex }
+    public enum SidebarTab { Playlist, History, Plex, Podcasts }
 
     public partial class MainWindow : Window
     {
@@ -35,6 +36,11 @@ namespace VideoPlayer
         // Quality selection
         private string _currentUrl;
         private int _selectedHeight = 1080;
+
+        // When yt-dlp resolves a source to separate video + audio streams (e.g. Reddit's
+        // split DASH), the audio URL is parked here and attached as an external stream once
+        // the video finishes opening. Null for muxed sources that already carry audio.
+        private string _pendingExternalAudioUrl;
         private static readonly (int Height, string Label)[] QualityLevels =
         {
             (2160, "4K (2160p)"),
@@ -84,6 +90,13 @@ namespace VideoPlayer
         public ObservableCollection<Bookmark> PlaylistItems { get; } = new();
         public ObservableCollection<HistoryEntry> HistoryItems { get; } = new();
         public ObservableCollection<PlexItem> PlexItems { get; } = new();
+
+        // Podcasts — the results box shows either shows (search results) or the episodes of
+        // a selected show; both models expose DisplayTitle/DisplaySubtitle so one template fits.
+        public ObservableCollection<object> PodcastItems { get; } = new();
+        private readonly PodcastService _podcasts = new();
+        private bool _podcastViewingEpisodes;   // false = show list, true = episode list
+        private double _playbackSpeed = 1.0;
 
         public ICommand OpenUrlCommand  { get; }
         public ICommand PlayPauseCommand { get; }
@@ -274,6 +287,26 @@ namespace VideoPlayer
                 ProgressSlider.Value = 0;
             });
 
+            // For split-stream sources, attach the parked audio URL as an external stream
+            // once the main (video) open completes. Best-effort: if the attach fails the
+            // video still plays (no worse than before), so we only log.
+            _player.OpenCompleted += (s, e) => Dispatcher.InvokeAsync(() =>
+            {
+                var audio = _pendingExternalAudioUrl;
+                _pendingExternalAudioUrl = null;
+                if (string.IsNullOrEmpty(audio)) return;
+                try
+                {
+                    // Non-blocking; the audio decoder syncs to the already-open video.
+                    _player.OpenAsync(new ExternalAudioStream { Url = audio });
+                    App.Log("[Flyleaf] External audio stream attaching.");
+                }
+                catch (Exception ex)
+                {
+                    App.Log($"[Flyleaf] External audio attach failed: {ex.Message}");
+                }
+            });
+
             _player.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(_player.Status))
@@ -360,6 +393,7 @@ namespace VideoPlayer
             UpdatePlexTabState();
 
             await LoadSettingsAsync();
+            CookiesMenuItem.IsChecked = _settings.UseBrowserCookies;
 
             await _history.LoadAsync();
             RefreshHistoryView();
@@ -428,7 +462,7 @@ namespace VideoPlayer
             try
             {
                 PlaylistErrorText.Visibility = Visibility.Collapsed;
-                var items = await _api.GetYouTubeBookmarksAsync(workspaceId);
+                var items = await _api.GetBookmarksAsync(workspaceId);
                 PlaylistItems.Clear();
                 foreach (var bm in items)
                 {
@@ -492,6 +526,7 @@ namespace VideoPlayer
         private void ShowPlaylistTab_Click(object sender, RoutedEventArgs e) => SelectTab(SidebarTab.Playlist);
         private void ShowHistoryTab_Click(object sender, RoutedEventArgs e)  => SelectTab(SidebarTab.History);
         private void ShowPlexTab_Click(object sender, RoutedEventArgs e)     => SelectTab(SidebarTab.Plex);
+        private void ShowPodcastsTab_Click(object sender, RoutedEventArgs e) => SelectTab(SidebarTab.Podcasts);
 
         private void SelectTab(SidebarTab tab)
         {
@@ -500,6 +535,7 @@ namespace VideoPlayer
             PlaylistContent.Visibility = tab == SidebarTab.Playlist ? Visibility.Visible : Visibility.Collapsed;
             HistoryContent.Visibility  = tab == SidebarTab.History  ? Visibility.Visible : Visibility.Collapsed;
             PlexContent.Visibility     = tab == SidebarTab.Plex     ? Visibility.Visible : Visibility.Collapsed;
+            PodcastContent.Visibility  = tab == SidebarTab.Podcasts ? Visibility.Visible : Visibility.Collapsed;
 
             // Underline tabs: active reads bright with an accent underline, inactive dims.
             var accent  = (Brush)FindResource("AccentBrush");
@@ -509,6 +545,7 @@ namespace VideoPlayer
             StyleTab(PlaylistTabButton, tab == SidebarTab.Playlist, accent, primary, muted);
             StyleTab(HistoryTabButton,  tab == SidebarTab.History,  accent, primary, muted);
             StyleTab(PlexTabButton,     tab == SidebarTab.Plex,     accent, primary, muted);
+            StyleTab(PodcastsTabButton, tab == SidebarTab.Podcasts, accent, primary, muted);
 
             if (tab == SidebarTab.History) RefreshHistoryView();
             if (tab == SidebarTab.Plex)    UpdatePlexTabState();
@@ -553,7 +590,7 @@ namespace VideoPlayer
                     return;
                 }
 
-                await PlayYouTubeUrl(entry.Url);
+                await PlayUrl(entry.Url);
             }
         }
 
@@ -792,6 +829,101 @@ namespace VideoPlayer
         }
 
         // ──────────────────────────────────────────────────────
+        // Podcasts (Apple Podcasts search → episode list → audio playback)
+        // ──────────────────────────────────────────────────────
+
+        private List<PodcastShow> _podcastShowResults = new();
+
+        private async void PodcastSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            await RunPodcastSearch(PodcastSearchBox.Text);
+        }
+
+        private async Task RunPodcastSearch(string term)
+        {
+            if (string.IsNullOrWhiteSpace(term)) return;
+
+            _podcastViewingEpisodes = false;
+            PodcastBackButton.Visibility = Visibility.Collapsed;
+            PodcastStatusText.Visibility = Visibility.Visible;
+            PodcastStatusText.Text = "Searching…";
+            PodcastItems.Clear();
+
+            try
+            {
+                _podcastShowResults = await _podcasts.SearchAsync(term);
+                ShowPodcastShowResults();
+            }
+            catch (Exception ex)
+            {
+                PodcastStatusText.Text = $"Search failed: {ex.Message}";
+            }
+        }
+
+        private void ShowPodcastShowResults()
+        {
+            _podcastViewingEpisodes = false;
+            PodcastBackButton.Visibility = Visibility.Collapsed;
+            PodcastItems.Clear();
+            foreach (var show in _podcastShowResults)
+                PodcastItems.Add(show);
+
+            if (PodcastItems.Count == 0)
+            {
+                PodcastStatusText.Visibility = Visibility.Visible;
+                PodcastStatusText.Text = "No podcasts found.";
+            }
+            else
+            {
+                PodcastStatusText.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async void PodcastResultsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count == 0) return;
+            var selected = PodcastResultsBox.SelectedItem;
+
+            if (selected is PodcastShow show)
+                await LoadPodcastEpisodes(show);
+            else if (selected is PodcastEpisode episode)
+            {
+                _activeMuid = null;      // podcasts aren't bookmarks — don't save position server-side
+                _seekOnPlay = null;
+                await PlayUrl(episode.AudioUrl, episode.Title, forceDirect: true);
+            }
+        }
+
+        private async Task LoadPodcastEpisodes(PodcastShow show)
+        {
+            PodcastStatusText.Visibility = Visibility.Visible;
+            PodcastStatusText.Text = $"Loading “{show.Title}”…";
+            PodcastItems.Clear();
+
+            try
+            {
+                var episodes = await _podcasts.GetEpisodesAsync(show);
+                _podcastViewingEpisodes = true;
+                PodcastBackButton.Visibility = Visibility.Visible;
+                foreach (var ep in episodes)
+                    PodcastItems.Add(ep);
+
+                PodcastStatusText.Visibility = episodes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                if (episodes.Count == 0)
+                    PodcastStatusText.Text = "No playable episodes in this feed.";
+            }
+            catch (Exception ex)
+            {
+                PodcastStatusText.Visibility = Visibility.Visible;
+                PodcastStatusText.Text = $"Could not load episodes: {ex.Message}";
+            }
+        }
+
+        private void PodcastBack_Click(object sender, RoutedEventArgs e) => ShowPodcastShowResults();
+
+        // ──────────────────────────────────────────────────────
         // Login / sign-out
         // ──────────────────────────────────────────────────────
 
@@ -858,7 +990,7 @@ namespace VideoPlayer
             if (fresh?.Position is int pos && pos > 0)
                 _seekOnPlay = pos * 1000L;
 
-            await PlayYouTubeUrl(bookmark.Url);
+            await PlayUrl(bookmark.Url);
         }
 
         private void Window_StateChanged(object sender, EventArgs e)
@@ -946,11 +1078,31 @@ namespace VideoPlayer
             {
                 _activeMuid = null;
                 _seekOnPlay = null;
-                await PlayYouTubeUrl(dialog.Url);
+                await PlayUrl(dialog.Url);
             }
         }
 
-        private async Task PlayYouTubeUrl(string url)
+        private void ToggleBrowserCookies_Click(object sender, RoutedEventArgs e)
+        {
+            _settings.UseBrowserCookies = CookiesMenuItem.IsChecked;
+            SaveSettings();
+        }
+
+        // Direct-media / local file extensions that FFmpeg can open without yt-dlp.
+        private static readonly string[] DirectMediaExtensions =
+        {
+            ".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".flv", ".wmv", ".ts",
+            ".m3u8", ".mpd", ".mp3", ".m4a", ".aac", ".flac", ".wav", ".ogg", ".oga",
+            ".opus", ".wma"
+        };
+
+        /// <summary>
+        /// Plays any media URL. Local files and direct media URLs open straight through
+        /// FFmpeg; every other http(s) page URL is resolved with yt-dlp, which supports
+        /// ~1,800 sites (YouTube, Reddit, Facebook, TikTok, Vimeo, ...). Split-stream
+        /// sources (separate video+audio) are recombined via <see cref="_pendingExternalAudioUrl"/>.
+        /// </summary>
+        private async Task PlayUrl(string url, string displayTitle = null, bool forceDirect = false)
         {
             try
             {
@@ -965,7 +1117,25 @@ namespace VideoPlayer
 
                 App.Log($"[Flyleaf] Stop requested. Status={_player.Status}");
                 _player.Stop();
+                _pendingExternalAudioUrl = null;
                 App.Log("[Flyleaf] Stop() returned");
+
+                _currentUrl = url;
+
+                // Fast path: local files, direct media URLs, and caller-forced direct playback
+                // (e.g. podcast audio enclosures, whose URLs aren't always extension-suffixed).
+                if (forceDirect || IsDirectlyPlayable(url))
+                {
+                    var directTitle = displayTitle ?? DeriveTitleFromUrl(url);
+                    SetWindowTitle(directTitle);
+                    _history.Record(url, directTitle);
+                    if (HistoryContent.Visibility == Visibility.Visible)
+                        RefreshHistoryView();
+
+                    App.Log("[Flyleaf] Opening direct media (no yt-dlp).");
+                    _player.OpenAsync(url);
+                    return;
+                }
 
                 if (!_ytdlpReady)
                 {
@@ -974,52 +1144,82 @@ namespace VideoPlayer
                     return;
                 }
 
-                _currentUrl = url;
+                var (title, videoUrl, audioUrl) = await ResolveWithYtDlpAsync(url);
 
-                // Fetch title and stream URL in parallel
-                // Use best muxed format (video+audio in one stream) capped at selected quality
-                var titleTask = RunYtDlp("--get-title", url);
-                var streamTask = RunYtDlp($"-f best[height<={_selectedHeight}]/best -g", url);
-                await Task.WhenAll(titleTask, streamTask);
+                if (string.IsNullOrEmpty(videoUrl))
+                    throw new Exception("Could not resolve a playable stream for this URL.");
 
-                var title     = titleTask.Result?.Trim();
-                var streamUrl = streamTask.Result?.Trim();
-
-                if (!string.IsNullOrEmpty(title))
-                    Title = $"Video Player v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3)} - {title}";
-
-                if (string.IsNullOrEmpty(streamUrl))
-                    throw new Exception("Could not get stream URL");
+                SetWindowTitle(title);
 
                 // Record to local-only history (de-duped by URL, most-recent first).
                 _history.Record(url, title);
                 if (HistoryContent.Visibility == Visibility.Visible)
                     RefreshHistoryView();
 
-                App.Log($"[Flyleaf] Opening stream. Status={_player.Status}");
-                _player.OpenAsync(streamUrl);
+                // A second URL means yt-dlp split video from audio (e.g. Reddit) — park the
+                // audio so OpenCompleted attaches it once the video is open.
+                _pendingExternalAudioUrl = string.IsNullOrEmpty(audioUrl) ? null : audioUrl;
+
+                App.Log($"[Flyleaf] Opening stream. audio={(audioUrl != null ? "external" : "muxed")} Status={_player.Status}");
+                _player.OpenAsync(videoUrl);
                 App.Log("[Flyleaf] OpenAsync() called");
             }
             catch (Exception ex)
             {
+                _pendingExternalAudioUrl = null;
                 StatusText.Text = "Error loading video";
+                StatusText.Visibility = Visibility.Visible;
                 MessageBox.Show($"Error loading video: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
+        /// <summary>
+        /// Resolves a page URL to a stream via yt-dlp. Returns the title, the video URL, and
+        /// (only when the source has no muxed rendition) a separate audio URL. The format
+        /// selector prefers a single muxed stream so common sources keep their existing
+        /// single-URL behaviour and only Reddit-style split sources use the external-audio path.
+        /// </summary>
+        private async Task<(string title, string videoUrl, string audioUrl)> ResolveWithYtDlpAsync(string url)
+        {
+            var fmt = $"best[height<={_selectedHeight}]/bv*[height<={_selectedHeight}]+ba/best";
+
+            var titleTask  = RunYtDlp("--no-warnings --print \"%(title)s\"", url);
+            var streamTask = RunYtDlp($"--no-warnings -f \"{fmt}\" -g", url);
+            await Task.WhenAll(titleTask, streamTask);
+
+            var title = FirstLine(titleTask.Result);
+
+            var urls = (streamTask.Result ?? "")
+                .Split('\n')
+                .Select(l => l.Trim())
+                .Where(l => l.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var videoUrl = urls.Count > 0 ? urls[0] : null;
+            var audioUrl = urls.Count > 1 ? urls[1] : null;
+            return (title, videoUrl, audioUrl);
+        }
+
         private async Task<string> RunYtDlp(string arguments, string url)
         {
+            // When enabled, borrow the user's browser session so private / logged-in content
+            // (e.g. a friends-only Facebook video) can be resolved.
+            var cookies = _settings.UseBrowserCookies && !string.IsNullOrWhiteSpace(_settings.CookieBrowser)
+                ? $"--cookies-from-browser {_settings.CookieBrowser} "
+                : "";
+
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = _ytdlpPath,
-                    Arguments = $"{arguments} \"{url}\"",
+                    Arguments = $"{cookies}{arguments} \"{url}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
                 }
             };
 
@@ -1030,10 +1230,70 @@ namespace VideoPlayer
 
             if (process.ExitCode != 0 && !string.IsNullOrEmpty(error))
             {
-                throw new Exception(error);
+                throw new Exception(CleanYtDlpError(error));
             }
 
-            return output.Split('\n')[0];
+            return output;   // full stdout; callers parse the lines they need
+        }
+
+        private static string FirstLine(string text) =>
+            string.IsNullOrEmpty(text) ? null
+                : text.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+
+        /// <summary>Turns yt-dlp's multi-line stderr into a single readable sentence.</summary>
+        private static string CleanYtDlpError(string error)
+        {
+            var line = error.Split('\n')
+                .Select(l => l.Trim())
+                .FirstOrDefault(l => l.StartsWith("ERROR", StringComparison.OrdinalIgnoreCase))
+                ?? FirstLine(error) ?? "yt-dlp could not extract a video from this URL.";
+            if (line.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase))
+                line = line.Substring("ERROR:".Length).Trim();
+            return line;
+        }
+
+        private static bool IsDirectlyPlayable(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            url = url.Trim();
+
+            try { if (File.Exists(url)) return true; } catch { }
+
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                if (uri.IsFile) return true;
+                if (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                {
+                    var path = uri.AbsolutePath;
+                    foreach (var ext in DirectMediaExtensions)
+                        if (path.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                }
+            }
+            return false;
+        }
+
+        private static string DeriveTitleFromUrl(string url)
+        {
+            try
+            {
+                if (File.Exists(url)) return Path.GetFileNameWithoutExtension(url);
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                {
+                    var name = Path.GetFileName(uri.IsFile ? uri.LocalPath : uri.AbsolutePath);
+                    if (!string.IsNullOrEmpty(name)) return name;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private void SetWindowTitle(string mediaTitle)
+        {
+            var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+            Title = string.IsNullOrEmpty(mediaTitle)
+                ? $"Video Player v{v}"
+                : $"Video Player v{v} - {mediaTitle}";
         }
 
         private void PlayPause_Click(object sender, RoutedEventArgs e)
@@ -1058,6 +1318,20 @@ namespace VideoPlayer
                     _ = _plex.ReportTimelineAsync(_activePlex, "playing", _player.CurTime / 10000L);
                 _player.Play();
             }
+        }
+
+        private static readonly double[] SpeedSteps = { 1.0, 1.25, 1.5, 1.75, 2.0 };
+
+        private void SpeedButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_player == null) return;
+
+            var idx = Array.IndexOf(SpeedSteps, _playbackSpeed);
+            _playbackSpeed = SpeedSteps[(idx + 1) % SpeedSteps.Length];
+            _player.Speed = _playbackSpeed;
+
+            // "1×", "1.25×", …
+            SpeedButton.Content = (_playbackSpeed % 1 == 0 ? _playbackSpeed.ToString("0") : _playbackSpeed.ToString("0.##")) + "×";
         }
 
         private void ProgressSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -1137,7 +1411,7 @@ namespace VideoPlayer
                 var sig = $"{where}|{formats}|{text}";
                 if (sig == _dragLogSig) return;
                 _dragLogSig = sig;
-                App.Log($"[DragOver] {where} formats=[{formats}] text=\"{text}\" isYT={IsYouTubeUrl(text)}");
+                App.Log($"[DragOver] {where} formats=[{formats}] text=\"{text}\" isYT={IsVideoUrl(text)}");
             }
             catch (Exception ex)
             {
@@ -1153,13 +1427,13 @@ namespace VideoPlayer
             if (e.Data.GetDataPresent(DataFormats.Text))
             {
                 var text = e.Data.GetData(DataFormats.Text) as string;
-                if (IsYouTubeUrl(text))
+                if (IsVideoUrl(text))
                     e.Effects = DragDropEffects.Copy;
             }
             else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
             {
                 var text = e.Data.GetData(DataFormats.UnicodeText) as string;
-                if (IsYouTubeUrl(text))
+                if (IsVideoUrl(text))
                     e.Effects = DragDropEffects.Copy;
             }
 
@@ -1178,12 +1452,12 @@ namespace VideoPlayer
 
             if (!string.IsNullOrEmpty(url))
             {
-                url = ExtractYouTubeUrl(url);
+                url = ExtractFirstUrl(url);
                 if (!string.IsNullOrEmpty(url))
                 {
                     _activeMuid = null;
                     _seekOnPlay = null;
-                    await PlayYouTubeUrl(url);
+                    await PlayUrl(url);
                 }
             }
         }
@@ -1202,13 +1476,13 @@ namespace VideoPlayer
             if (e.Data.GetDataPresent(DataFormats.Text))
             {
                 var text = e.Data.GetData(DataFormats.Text) as string;
-                if (IsYouTubeUrl(text))
+                if (IsVideoUrl(text))
                     e.Effects = DragDropEffects.Copy;
             }
             else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
             {
                 var text = e.Data.GetData(DataFormats.UnicodeText) as string;
-                if (IsYouTubeUrl(text))
+                if (IsVideoUrl(text))
                     e.Effects = DragDropEffects.Copy;
             }
 
@@ -1236,7 +1510,7 @@ namespace VideoPlayer
             App.Log($"[Drop] Raw URL: {url ?? "null"}");
 
             if (string.IsNullOrEmpty(url)) return;
-            url = ExtractYouTubeUrl(url);
+            url = ExtractFirstUrl(url);
             App.Log($"[Drop] Extracted URL: {url}");
             if (string.IsNullOrEmpty(url)) return;
 
@@ -1268,10 +1542,17 @@ namespace VideoPlayer
             }
         }
 
-        private bool IsYouTubeUrl(string text)
+        /// <summary>
+        /// True for anything we can attempt to play: any http(s) URL (yt-dlp decides whether
+        /// it can extract a video) or a local/direct media file. No longer YouTube-specific.
+        /// </summary>
+        private bool IsVideoUrl(string text)
         {
-            if (string.IsNullOrEmpty(text)) return false;
-            return text.Contains("youtube.com") || text.Contains("youtu.be");
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            text = text.Trim();
+            return text.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || text.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                || IsDirectlyPlayable(text);
         }
 
         private string ExtractTitleFromDragData(IDataObject data)
@@ -1331,20 +1612,17 @@ namespace VideoPlayer
             return string.IsNullOrEmpty(title) ? null : title;
         }
 
-        private string ExtractYouTubeUrl(string text)
+        /// <summary>
+        /// Pulls the first http(s) URL out of dragged/dropped text (which often carries
+        /// extra label text). Falls back to the trimmed text so a bare local path still works.
+        /// </summary>
+        private string ExtractFirstUrl(string text)
         {
-            if (string.IsNullOrEmpty(text)) return null;
+            if (string.IsNullOrWhiteSpace(text)) return null;
 
-            var pattern = @"(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[\w-]+";
-            var match   = Regex.Match(text, pattern);
-
+            var match = Regex.Match(text, @"https?://[^\s""'<>]+");
             if (match.Success)
-            {
-                var url = match.Value;
-                if (!url.StartsWith("http"))
-                    url = "https://" + url;
-                return url;
-            }
+                return match.Value;
 
             return text.Trim();
         }
@@ -1502,7 +1780,7 @@ namespace VideoPlayer
                     _selectedHeight = h;
                     _seekOnPlay = null;
                     if (!string.IsNullOrEmpty(_currentUrl))
-                        _ = PlayYouTubeUrl(_currentUrl);
+                        _ = PlayUrl(_currentUrl);
                 };
                 menu.Items.Add(item);
             }

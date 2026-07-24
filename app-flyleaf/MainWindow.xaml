@@ -525,6 +525,11 @@
                     <MenuItem Header="_File">
                         <MenuItem Header="_Open URL..." Click="OpenUrl_Click" InputGestureText="Ctrl+O"/>
                         <Separator/>
+                        <MenuItem x:Name="CookiesMenuItem"
+                                  Header="Use _Edge cookies for private videos"
+                                  IsCheckable="True"
+                                  Click="ToggleBrowserCookies_Click"/>
+                        <Separator/>
                         <MenuItem Header="E_xit" Click="Exit_Click"/>
                     </MenuItem>
                 </Menu>
@@ -640,6 +645,10 @@
                                     Margin="0,0,30,0"/>
                             <Button x:Name="PlexTabButton" Content="Plex"
                                     Click="ShowPlexTab_Click"
+                                    Style="{StaticResource TabButton}"
+                                    Margin="0,0,30,0"/>
+                            <Button x:Name="PodcastsTabButton" Content="Podcasts"
+                                    Click="ShowPodcastsTab_Click"
                                     Style="{StaticResource TabButton}"/>
                         </StackPanel>
                     </Border>
@@ -985,6 +994,104 @@
                         </ListBox>
                     </Grid>
                     <!-- end PlexContent -->
+
+                    <!-- Podcast content (Apple Podcasts search → episode list → audio playback) -->
+                    <Grid x:Name="PodcastContent" Grid.Row="1" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Search box with placeholder -->
+                        <Grid Grid.Row="0" Margin="20,16,20,10">
+                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
+                                    BorderThickness="1" CornerRadius="8"/>
+                            <TextBox x:Name="PodcastSearchBox"
+                                     Height="38"
+                                     VerticalContentAlignment="Center"
+                                     Padding="12,0"
+                                     FontSize="13"
+                                     Background="Transparent"
+                                     Foreground="#E7E9F1"
+                                     CaretBrush="#E7E9F1"
+                                     BorderThickness="0"
+                                     KeyDown="PodcastSearch_KeyDown"/>
+                            <TextBlock Text="Search podcasts…  (Enter)"
+                                       Foreground="#565C6D"
+                                       Margin="13,0,0,0"
+                                       FontSize="13"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text.Length, ElementName=PodcastSearchBox}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+
+                        <!-- Back to results (only visible when viewing a show's episodes) -->
+                        <Button x:Name="PodcastBackButton"
+                                Grid.Row="1"
+                                Content="‹  Back to results"
+                                Click="PodcastBack_Click"
+                                HorizontalAlignment="Left"
+                                Margin="20,0,20,6"
+                                Padding="0"
+                                FontSize="12"
+                                Foreground="#7D97FF"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Visibility="Collapsed"/>
+
+                        <!-- Status / empty state -->
+                        <TextBlock x:Name="PodcastStatusText"
+                                   Grid.Row="2"
+                                   Foreground="#848B9F"
+                                   FontSize="12"
+                                   Margin="20,4,20,4"
+                                   TextWrapping="Wrap"
+                                   Text="Search Apple Podcasts to get started."/>
+
+                        <!-- Results list (shows or episodes) -->
+                        <ListBox x:Name="PodcastResultsBox"
+                                 Grid.Row="3"
+                                 Background="Transparent"
+                                 Foreground="#E7E9F1"
+                                 BorderThickness="0"
+                                 Padding="8,2,8,8"
+                                 ItemContainerStyle="{StaticResource ListItemContainer}"
+                                 ItemsSource="{Binding PodcastItems}"
+                                 SelectionChanged="PodcastResultsBox_SelectionChanged"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="11,9">
+                                        <TextBlock Text="{Binding DisplayTitle}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="14"
+                                                   FontWeight="Medium"
+                                                   LineHeight="19"
+                                                   Foreground="#E7E9F1"/>
+                                        <TextBlock Text="{Binding DisplaySubtitle}"
+                                                   FontSize="12"
+                                                   Foreground="#848B9F"
+                                                   Margin="0,6,0,0"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                    <!-- end PodcastContent -->
                   </Grid>
                 </Border>
                 <!-- end SidePanel -->
@@ -1072,6 +1179,32 @@
 
             <!-- Volume -->
             <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="16,0,22,0" VerticalAlignment="Center">
+                <!-- Playback speed (cycles 1x → 1.25x → 1.5x → 1.75x → 2x) -->
+                <Button x:Name="SpeedButton"
+                        Content="1×"
+                        Click="SpeedButton_Click"
+                        ToolTip="Playback speed"
+                        Width="40" Height="28"
+                        Margin="0,0,16,0"
+                        FontSize="13"
+                        Foreground="#848B9F"
+                        Background="Transparent"
+                        Cursor="Hand"
+                        VerticalAlignment="Center">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="SpBd" Background="#10FFFFFF" CornerRadius="6" Padding="2">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="SpBd" Property="Background" Value="#1FFFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
                 <Viewbox Width="20" Height="20" VerticalAlignment="Center">
                     <Canvas Width="24" Height="24">
                         <Path Stroke="#848B9F" StrokeThickness="1.8"
