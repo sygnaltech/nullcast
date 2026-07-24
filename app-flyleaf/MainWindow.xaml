@@ -25,6 +25,9 @@
              ══════════════════════════════════════════════════════ -->
         <FontFamily x:Key="AppFont">pack://application:,,,/Fonts/#Instrument Sans</FontFamily>
 
+        <!-- true → Visible, false → Collapsed (Plex drill-in chevron) -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
         <SolidColorBrush x:Key="BgAppBrush"         Color="#0F1118"/>
         <SolidColorBrush x:Key="BgMenuBrush"        Color="#151826"/>
         <SolidColorBrush x:Key="BgControlsBrush"    Color="#141726"/>
@@ -273,6 +276,30 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Pill segment button (Plex library selector: Movies / TV / Search) -->
+        <Style x:Key="PlexSegment" TargetType="Button">
+            <Setter Property="Background"  Value="#08FFFFFF"/>
+            <Setter Property="Foreground"  Value="#848B9F"/>
+            <Setter Property="FontSize"    Value="12"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+            <Setter Property="Cursor"      Value="Hand"/>
+            <Setter Property="Margin"      Value="0,0,7,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="#1AFFFFFF"
+                                BorderThickness="1"
+                                CornerRadius="14"
+                                Padding="13,5">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
@@ -899,16 +926,53 @@
                     </Grid>
                     <!-- end HistoryContent -->
 
-                    <!-- Plex content (separate ecosystem — search a Plex Media Server) -->
+                    <!-- Plex content (separate ecosystem — browse/search a Plex Media Server) -->
                     <Grid x:Name="PlexContent" Grid.Row="1" Visibility="Collapsed">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>  <!-- library selector -->
+                            <RowDefinition Height="Auto"/>  <!-- category dropdown -->
+                            <RowDefinition Height="Auto"/>  <!-- filter / search box -->
+                            <RowDefinition Height="Auto"/>  <!-- breadcrumb (TV drill) -->
+                            <RowDefinition Height="Auto"/>  <!-- status / empty state -->
+                            <RowDefinition Height="*"/>     <!-- results list -->
                         </Grid.RowDefinitions>
 
-                        <!-- Search box with placeholder -->
-                        <Grid Grid.Row="0" Margin="20,16,20,10">
+                        <!-- Library selector (Movies / TV Shows / Search) — buttons added in code -->
+                        <WrapPanel x:Name="PlexLibraryBar"
+                                   Grid.Row="0"
+                                   Margin="20,14,16,2"
+                                   Visibility="Collapsed"/>
+
+                        <!-- Category dropdown (Views + Genres) -->
+                        <ComboBox x:Name="PlexCategoryCombo"
+                                  Grid.Row="1"
+                                  Height="34"
+                                  Margin="20,4,20,4"
+                                  FontSize="13"
+                                  Visibility="Collapsed"
+                                  SelectionChanged="PlexCategory_SelectionChanged">
+                            <ComboBox.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}"
+                                                       Foreground="#565C6D"
+                                                       FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       Margin="8,7,0,2"/>
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                </GroupStyle>
+                            </ComboBox.GroupStyle>
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Label}" FontSize="13"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <!-- Filter / search box with placeholder -->
+                        <Grid Grid.Row="2" Margin="20,4,20,8">
                             <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
                                     BorderThickness="1" CornerRadius="8"/>
                             <TextBox x:Name="PlexSearchBox"
@@ -921,7 +985,8 @@
                                      CaretBrush="#E7E9F1"
                                      BorderThickness="0"
                                      TextChanged="PlexSearch_TextChanged"/>
-                            <TextBlock Text="Search Plex…"
+                            <TextBlock x:Name="PlexSearchPlaceholder"
+                                       Text="Filter titles…"
                                        Foreground="#565C6D"
                                        Margin="13,0,0,0"
                                        FontSize="13"
@@ -940,9 +1005,15 @@
                             </TextBlock>
                         </Grid>
 
-                        <!-- Status / empty state (unconfigured, searching, no results) -->
+                        <!-- Breadcrumb (TV drill: Section › Show › Season) — crumbs added in code -->
+                        <WrapPanel x:Name="PlexBreadcrumbBar"
+                                   Grid.Row="3"
+                                   Margin="20,0,16,8"
+                                   Visibility="Collapsed"/>
+
+                        <!-- Status / empty state (unconfigured, loading, no results) -->
                         <TextBlock x:Name="PlexStatusText"
-                                   Grid.Row="1"
+                                   Grid.Row="4"
                                    Foreground="#848B9F"
                                    FontSize="12"
                                    Margin="20,4,20,4"
@@ -951,7 +1022,7 @@
 
                         <!-- Results list -->
                         <ListBox x:Name="PlexResultsBox"
-                                 Grid.Row="2"
+                                 Grid.Row="5"
                                  Background="Transparent"
                                  Foreground="#E7E9F1"
                                  BorderThickness="0"
@@ -962,33 +1033,47 @@
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Margin="11,9">
-                                        <TextBlock Text="{Binding Title}"
-                                                   TextWrapping="Wrap"
-                                                   FontSize="14"
-                                                   FontWeight="Medium"
-                                                   LineHeight="19"
-                                                   Foreground="#E7E9F1"/>
-                                        <TextBlock Text="{Binding Subtitle}"
-                                                   FontSize="12"
-                                                   Foreground="#848B9F"
-                                                   Margin="0,6,0,0"
-                                                   TextTrimming="CharacterEllipsis">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Subtitle}" Value="">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                        <TextBlock Text="{Binding MetaLine}"
-                                                   FontSize="12"
-                                                   Foreground="#7D97FF"
-                                                   Margin="0,4,0,0"/>
-                                    </StackPanel>
+                                    <Grid Margin="11,9">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Title}"
+                                                       TextWrapping="Wrap"
+                                                       FontSize="14"
+                                                       FontWeight="Medium"
+                                                       LineHeight="19"
+                                                       Foreground="#E7E9F1"/>
+                                            <TextBlock Text="{Binding Subtitle}"
+                                                       FontSize="12"
+                                                       Foreground="#848B9F"
+                                                       Margin="0,6,0,0"
+                                                       TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Subtitle}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding MetaLine}"
+                                                       FontSize="12"
+                                                       Foreground="#7D97FF"
+                                                       Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <!-- Drill-in chevron for shows/seasons -->
+                                        <TextBlock Grid.Column="1"
+                                                   Text="›"
+                                                   FontSize="20"
+                                                   Foreground="#565C6D"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,4,0"
+                                                   Visibility="{Binding IsContainer, Converter={StaticResource BoolToVisibility}}"/>
+                                    </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>

@@ -191,6 +191,152 @@ namespace VideoPlayer.Services
         }
 
         // ──────────────────────────────────────────────────────
+        // Browse (libraries → categories/genres → items → TV drill-down)
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Lists the browsable video libraries (Plex sections of type movie/show). Music and
+        /// photo sections are dropped. Never throws — returns an empty list on error.
+        /// </summary>
+        public async Task<List<PlexSection>> GetVideoSectionsAsync()
+        {
+            var sections = new List<PlexSection>();
+            if (!IsConfigured) return sections;
+
+            try
+            {
+                var url  = $"{_store.PlexBaseUrl}/library/sections" +
+                           $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
+                var parsed = await GetJsonAsync(url);
+                foreach (var d in parsed?.MediaContainer?.Directory ?? Array.Empty<PlexDirectory>())
+                {
+                    var type = (d.Type ?? "").ToLowerInvariant();
+                    if (type is not ("movie" or "show")) continue;
+                    if (string.IsNullOrEmpty(d.Key)) continue;
+                    sections.Add(new PlexSection { Key = d.Key!, Type = type, Title = d.Title ?? type });
+                }
+            }
+            catch { /* empty list → UI shows search only */ }
+
+            return sections;
+        }
+
+        /// <summary>Lists the genres declared by a library section. Never throws.</summary>
+        public async Task<List<PlexGenre>> GetGenresAsync(string sectionKey)
+        {
+            var genres = new List<PlexGenre>();
+            if (!IsConfigured || string.IsNullOrEmpty(sectionKey)) return genres;
+
+            try
+            {
+                var url = $"{_store.PlexBaseUrl}/library/sections/{Uri.EscapeDataString(sectionKey)}/genre" +
+                          $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
+                var parsed = await GetJsonAsync(url);
+                foreach (var d in parsed?.MediaContainer?.Directory ?? Array.Empty<PlexDirectory>())
+                {
+                    if (string.IsNullOrEmpty(d.Key) || string.IsNullOrEmpty(d.Title)) continue;
+                    genres.Add(new PlexGenre { Id = d.Key!, Title = d.Title! });
+                }
+            }
+            catch { /* no genres → dropdown shows Views only */ }
+
+            return genres;
+        }
+
+        /// <summary>
+        /// Browses a library section for a category/view. For a movie section, movies are returned
+        /// directly. For a show section, <c>All</c>/<c>Genre</c> return shows (navigational — drill
+        /// with <see cref="GetChildrenAsync"/>), while the smart views return a flat list of episodes.
+        /// Never throws.
+        /// </summary>
+        public async Task<List<PlexItem>> BrowseAsync(
+            string sectionKey, string sectionType, PlexBrowseView view, string? genreId, int limit = 300)
+        {
+            var results = new List<PlexItem>();
+            if (!IsConfigured || string.IsNullOrEmpty(sectionKey)) return results;
+
+            bool isShow = sectionType == "show";
+
+            // Type: 1=movie, 2=show, 4=episode. Smart views on a show list flat episodes.
+            int    typeNum = view switch
+            {
+                PlexBrowseView.All or PlexBrowseView.Genre => isShow ? 2 : 1,
+                _                                          => isShow ? 4 : 1,
+            };
+            string sort = view switch
+            {
+                PlexBrowseView.RecentlyAdded   => "addedAt:desc",
+                PlexBrowseView.RecentlyWatched => "lastViewedAt:desc",
+                PlexBrowseView.NeverWatched    => "addedAt:desc",
+                _                              => "titleSort:asc",
+            };
+
+            var extra = "";
+            if (view == PlexBrowseView.Genre && !string.IsNullOrEmpty(genreId))
+                extra += $"&genre={Uri.EscapeDataString(genreId)}";
+            if (view == PlexBrowseView.NeverWatched)
+                extra += "&unwatched=1";
+
+            try
+            {
+                var url = $"{_store.PlexBaseUrl}/library/sections/{Uri.EscapeDataString(sectionKey)}/all" +
+                          $"?type={typeNum}&sort={sort}{extra}" +
+                          $"&X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
+                var parsed = await GetJsonAsync(url, limit);
+
+                foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
+                {
+                    // "Recently Watched" filters client-side: only items actually watched.
+                    if (view == PlexBrowseView.RecentlyWatched && (m.LastViewedAt ?? 0) <= 0) continue;
+                    results.Add(PlexItem.FromMetadata(m));
+                }
+            }
+            catch { /* empty → UI shows "nothing here" */ }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Fetches the children of a container: a show → its seasons, a season → its episodes
+        /// (in order). Used for the TV drill-down. Never throws.
+        /// </summary>
+        public async Task<List<PlexItem>> GetChildrenAsync(string ratingKey)
+        {
+            var results = new List<PlexItem>();
+            if (!IsConfigured || string.IsNullOrEmpty(ratingKey)) return results;
+
+            try
+            {
+                var url = $"{_store.PlexBaseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}/children" +
+                          $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
+                var parsed = await GetJsonAsync(url, 300);
+                foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
+                    results.Add(PlexItem.FromMetadata(m));
+            }
+            catch { /* empty */ }
+
+            return results;
+        }
+
+        /// <summary>
+        /// GET + JSON-deserialize, optionally paging with the Plex container-size headers so large
+        /// libraries return in one shot rather than the server's small default page.
+        /// </summary>
+        private static async Task<PlexSearchResponse?> GetJsonAsync(string url, int? containerSize = null)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (containerSize is int cs)
+            {
+                req.Headers.Add("X-Plex-Container-Start", "0");
+                req.Headers.Add("X-Plex-Container-Size", cs.ToString());
+            }
+            var resp = await _http.SendAsync(req);
+            resp.EnsureSuccessStatusCode();
+            var body = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<PlexSearchResponse>(body);
+        }
+
+        // ──────────────────────────────────────────────────────
         // Playback URL + progress reporting
         // ──────────────────────────────────────────────────────
 

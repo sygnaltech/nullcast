@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -87,6 +88,34 @@ namespace VideoPlayer
         private DispatcherTimer _plexSearchDebounce;
         private SidebarTab _activeTab = SidebarTab.Playlist;
 
+        // Plex browse state (library selector → category → drill-down)
+        private List<PlexSection> _plexSections = new();
+        private PlexSection _plexSection;                 // active library (null while in search mode)
+        private bool _plexSearchMode;                     // true when the "Search" segment is active
+        private bool _plexSectionsLoaded;
+        private readonly ObservableCollection<PlexCategory> _plexCategories = new();
+        private PlexCategory _plexCategory;
+        private readonly Dictionary<string, List<PlexGenre>> _plexGenreCache = new();
+        private List<PlexItem> _plexBrowseItems = new();  // level-0 list for the current category
+        private List<PlexItem> _plexCurrentItems = new(); // list at the current drill depth
+        private readonly List<PlexDrillFrame> _plexDrill = new();
+        private int _plexLoadToken;                        // stale-guard for async browse loads
+
+        // Segment pill colors (active vs inactive) — mirror the PlexSegment XAML style.
+        private static readonly Brush SegActiveBg   = Frozen(Color.FromArgb(0x21, 0x7D, 0x97, 0xFF));
+        private static readonly Brush SegInactiveBg = Frozen(Color.FromArgb(0x08, 0xFF, 0xFF, 0xFF));
+        private static readonly Brush SegActiveFg   = Frozen(Color.FromRgb(0xE7, 0xE9, 0xF1));
+        private static readonly Brush SegInactiveFg = Frozen(Color.FromRgb(0x84, 0x8B, 0x9F));
+        private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
+        /// <summary>One level of TV drill-down; its children are cached so breadcrumb hops don't refetch.</summary>
+        private class PlexDrillFrame
+        {
+            public string RatingKey = "";
+            public string Label = "";
+            public List<PlexItem> Items = new();
+        }
+
         public ObservableCollection<Bookmark> PlaylistItems { get; } = new();
         public ObservableCollection<HistoryEntry> HistoryItems { get; } = new();
         public ObservableCollection<PlexItem> PlexItems { get; } = new();
@@ -105,6 +134,11 @@ namespace VideoPlayer
         {
             InitializeComponent();
             DataContext = this;
+
+            // Group the Plex category dropdown into "Views" and "Genres" sections.
+            var catView = new CollectionViewSource { Source = _plexCategories };
+            catView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PlexCategory.Group)));
+            PlexCategoryCombo.ItemsSource = catView.View;
 
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             Title = $"Video Player v{v.Major}.{v.Minor}.{v.Build}";
@@ -551,7 +585,7 @@ namespace VideoPlayer
             StyleTab(PodcastsTabButton, tab == SidebarTab.Podcasts, accent, primary, muted);
 
             if (tab == SidebarTab.History) RefreshHistoryView();
-            if (tab == SidebarTab.Plex)    UpdatePlexTabState();
+            if (tab == SidebarTab.Plex)    EnterPlexTab();
         }
 
         private static void StyleTab(Button btn, bool active, Brush accent, Brush primary, Brush muted)
@@ -682,14 +716,12 @@ namespace VideoPlayer
             var dialog = new ServicesSettingsDialog(_services) { Owner = this };
             if (dialog.ShowDialog() == true)
             {
-                // Config changed — rebuild the client and refresh the Plex tab.
+                // Config changed — rebuild the client and reload the Plex tab from scratch.
                 _plex = new PlexService(_services);
-                UpdatePlexTabState();
-                if (_activeTab == SidebarTab.Plex && _services.IsPlexConfigured
-                    && !string.IsNullOrWhiteSpace(PlexSearchBox.Text))
-                {
-                    _ = RunPlexSearch(PlexSearchBox.Text);
-                }
+                _plexSectionsLoaded = false;
+                _plexGenreCache.Clear();
+                if (_activeTab == SidebarTab.Plex) EnterPlexTab();
+                else UpdatePlexTabState();
             }
         }
 
@@ -701,14 +733,23 @@ namespace VideoPlayer
             if (_services?.IsPlexConfigured != true)
             {
                 PlexItems.Clear();
+                PlexLibraryBar.Visibility   = Visibility.Collapsed;
+                PlexCategoryCombo.Visibility = Visibility.Collapsed;
+                PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
                 PlexStatusText.Text = "No Plex server configured. Open Services (⚙) to add one.";
                 PlexStatusText.Visibility = Visibility.Visible;
+                return;
             }
-            else if (PlexItems.Count == 0)
+
+            PlexLibraryBar.Visibility = Visibility.Visible;
+
+            if (PlexItems.Count == 0)
             {
-                PlexStatusText.Text = string.IsNullOrWhiteSpace(PlexSearchBox?.Text)
-                    ? "Search your Plex libraries above."
-                    : "No results.";
+                PlexStatusText.Text = _plexSearchMode
+                    ? (string.IsNullOrWhiteSpace(PlexSearchBox?.Text)
+                        ? "Search your Plex libraries above."
+                        : "No results.")
+                    : "Nothing to show here.";
                 PlexStatusText.Visibility = Visibility.Visible;
             }
             else
@@ -717,12 +758,298 @@ namespace VideoPlayer
             }
         }
 
+        // ──────────────────────────────────────────────────────
+        // Plex browse: libraries → category → drill-down
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>Entered whenever the Plex tab becomes active; loads libraries once.</summary>
+        private async void EnterPlexTab()
+        {
+            if (_services?.IsPlexConfigured != true) { UpdatePlexTabState(); return; }
+            if (_plexSectionsLoaded) { UpdatePlexTabState(); return; }
+            await LoadPlexSections();
+        }
+
+        private async Task LoadPlexSections()
+        {
+            _plexSectionsLoaded = true;
+            try   { _plexSections = await _plex.GetVideoSectionsAsync(); }
+            catch { _plexSections = new(); }
+
+            BuildPlexLibraryBar();
+
+            // Default to the first movie library, else the first video library, else search-only.
+            var first = _plexSections.FirstOrDefault(s => s.Type == "movie") ?? _plexSections.FirstOrDefault();
+            if (first != null) await SelectPlexLibrary(first);
+            else               SelectPlexSearchMode();
+        }
+
+        private void BuildPlexLibraryBar()
+        {
+            PlexLibraryBar.Children.Clear();
+            foreach (var s in _plexSections)
+                PlexLibraryBar.Children.Add(MakeSegment(s.Title, s));
+            // Trailing "Search" segment preserves the global cross-library hub search.
+            PlexLibraryBar.Children.Add(MakeSegment("Search", null));
+            PlexLibraryBar.Visibility = Visibility.Visible;
+        }
+
+        private Button MakeSegment(string label, PlexSection tag)
+        {
+            var b = new Button
+            {
+                Content = label,
+                Tag     = (object)tag ?? "__search__",
+                Style   = (Style)FindResource("PlexSegment"),
+            };
+            b.Click += PlexSegment_Click;
+            return b;
+        }
+
+        private async void PlexSegment_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button b) return;
+            if (b.Tag is PlexSection s) await SelectPlexLibrary(s);
+            else                        SelectPlexSearchMode();
+        }
+
+        private void StylePlexSegments()
+        {
+            foreach (var b in PlexLibraryBar.Children.OfType<Button>())
+            {
+                bool active = b.Tag is PlexSection s
+                    ? (!_plexSearchMode && _plexSection != null && s.Key == _plexSection.Key)
+                    : _plexSearchMode;
+                b.Background = active ? SegActiveBg   : SegInactiveBg;
+                b.Foreground = active ? SegActiveFg   : SegInactiveFg;
+            }
+        }
+
+        /// <summary>Switch to a video library: show its categories and browse the default view.</summary>
+        private async Task SelectPlexLibrary(PlexSection section)
+        {
+            _plexSearchMode = false;
+            _plexSection    = section;
+            _plexDrill.Clear();
+
+            PlexCategoryCombo.Visibility = Visibility.Visible;
+            PlexSearchPlaceholder.Text   = "Filter titles…";
+            PlexSearchBox.Text           = "";   // reset the narrow filter
+            StylePlexSegments();
+            RebuildBreadcrumb();
+
+            await PopulatePlexCategories(section);   // selecting a category triggers the browse
+        }
+
+        /// <summary>Switch to the global search segment: text box hits /hubs/search across all libraries.</summary>
+        private void SelectPlexSearchMode()
+        {
+            _plexSearchMode = true;
+            _plexSection    = null;
+            _plexCategory   = null;
+            _plexDrill.Clear();
+
+            PlexCategoryCombo.Visibility = Visibility.Collapsed;
+            PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
+            PlexSearchPlaceholder.Text   = "Search Plex…";
+            PlexSearchBox.Text           = "";
+            _plexBrowseItems  = new();
+            _plexCurrentItems = new();
+            PlexItems.Clear();
+            StylePlexSegments();
+            UpdatePlexTabState();
+            PlexSearchBox.Focus();
+        }
+
+        private async Task PopulatePlexCategories(PlexSection section)
+        {
+            _plexCategories.Clear();
+            _plexCategories.Add(new PlexCategory("All",              PlexBrowseView.All,            "Views"));
+            _plexCategories.Add(new PlexCategory("Recently Added",   PlexBrowseView.RecentlyAdded,  "Views"));
+            _plexCategories.Add(new PlexCategory("Recently Watched", PlexBrowseView.RecentlyWatched,"Views"));
+            _plexCategories.Add(new PlexCategory("Never Watched",    PlexBrowseView.NeverWatched,   "Views"));
+
+            if (!_plexGenreCache.TryGetValue(section.Key, out var genres))
+            {
+                genres = await _plex.GetGenresAsync(section.Key);
+                _plexGenreCache[section.Key] = genres;
+                // A different library may have been picked while we awaited — bail if so.
+                if (_plexSearchMode || _plexSection?.Key != section.Key) return;
+            }
+            foreach (var g in genres)
+                _plexCategories.Add(new PlexCategory(g.Title, PlexBrowseView.Genre, "Genres") { GenreId = g.Id });
+
+            PlexCategoryCombo.SelectedIndex = 0;   // "All" → fires PlexCategory_SelectionChanged
+        }
+
+        private async void PlexCategory_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (PlexCategoryCombo.SelectedItem is not PlexCategory cat) return;
+            _plexCategory = cat;
+            await LoadPlexBrowse();
+        }
+
+        private async Task LoadPlexBrowse()
+        {
+            if (_plexSection == null || _plexCategory == null) return;
+
+            _plexDrill.Clear();
+            RebuildBreadcrumb();
+
+            int token = ++_plexLoadToken;
+            PlexStatusText.Text = "Loading…";
+            PlexStatusText.Visibility = Visibility.Visible;
+
+            List<PlexItem> items;
+            try
+            {
+                items = await _plex.BrowseAsync(
+                    _plexSection.Key, _plexSection.Type, _plexCategory.View, _plexCategory.GenreId);
+            }
+            catch (Exception ex)
+            {
+                App.Log($"[Plex] Browse failed: {ex.Message}");
+                items = new();
+            }
+
+            if (token != _plexLoadToken) return;   // a newer load superseded this one
+
+            _plexBrowseItems  = items;
+            _plexCurrentItems = items;
+            ApplyPlexNarrow();
+        }
+
+        /// <summary>Client-side narrowing of the current list by the filter box (title/subtitle contains).</summary>
+        private void ApplyPlexNarrow()
+        {
+            var q = _plexSearchMode ? "" : (PlexSearchBox?.Text ?? "").Trim();
+            PlexItems.Clear();
+            foreach (var it in _plexCurrentItems)
+            {
+                if (q.Length == 0
+                    || it.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || it.Subtitle.Contains(q, StringComparison.OrdinalIgnoreCase))
+                {
+                    PlexItems.Add(it);
+                }
+            }
+            UpdatePlexTabState();
+        }
+
+        /// <summary>Drill from a show into its seasons, or a season into its episodes.</summary>
+        private async Task PlexDrillInto(PlexItem container)
+        {
+            int token = ++_plexLoadToken;
+            PlexStatusText.Text = "Loading…";
+            PlexStatusText.Visibility = Visibility.Visible;
+
+            List<PlexItem> kids;
+            try   { kids = await _plex.GetChildrenAsync(container.RatingKey); }
+            catch { kids = new(); }
+
+            if (token != _plexLoadToken) return;
+
+            _plexDrill.Add(new PlexDrillFrame
+            {
+                RatingKey = container.RatingKey,
+                Label     = container.Title,
+                Items     = kids,
+            });
+            _plexCurrentItems = kids;
+            RebuildBreadcrumb();
+            ApplyPlexNarrow();
+        }
+
+        /// <summary>Rebuilds the breadcrumb row (Section › Show › Season) with clickable hops.</summary>
+        private void RebuildBreadcrumb()
+        {
+            PlexBreadcrumbBar.Children.Clear();
+
+            if (_plexSearchMode || _plexDrill.Count == 0)
+            {
+                PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // Root crumb → back to the browse (level-0) list.
+            AddCrumb(_plexSection?.Title ?? "Library", isCurrent: false, () =>
+            {
+                _plexDrill.Clear();
+                _plexCurrentItems = _plexBrowseItems;
+                RebuildBreadcrumb();
+                ApplyPlexNarrow();
+            });
+
+            for (int i = 0; i < _plexDrill.Count; i++)
+            {
+                AddSeparator();
+                int index = i;
+                bool isCurrent = i == _plexDrill.Count - 1;
+                AddCrumb(_plexDrill[i].Label, isCurrent, isCurrent ? null : () => PlexPopTo(index));
+            }
+
+            PlexBreadcrumbBar.Visibility = Visibility.Visible;
+        }
+
+        private void PlexPopTo(int frameIndex)
+        {
+            var frame = _plexDrill[frameIndex];
+            _plexDrill.RemoveRange(frameIndex + 1, _plexDrill.Count - frameIndex - 1);
+            _plexCurrentItems = frame.Items;
+            RebuildBreadcrumb();
+            ApplyPlexNarrow();
+        }
+
+        private void AddCrumb(string text, bool isCurrent, Action onClick)
+        {
+            if (isCurrent || onClick == null)
+            {
+                PlexBreadcrumbBar.Children.Add(new TextBlock
+                {
+                    Text = text,
+                    FontSize = 12,
+                    Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                return;
+            }
+
+            var b = new Button
+            {
+                Content = text,
+                Style   = (Style)FindResource("TextButton"),
+                FontSize = 12,
+                Padding = new Thickness(0),
+            };
+            b.Click += (_, __) => onClick();
+            PlexBreadcrumbBar.Children.Add(b);
+        }
+
+        private void AddSeparator()
+        {
+            PlexBreadcrumbBar.Children.Add(new TextBlock
+            {
+                Text = " › ",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x56, 0x5C, 0x6D)),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+
         private void PlexSearch_TextChanged(object sender, TextChangedEventArgs e)
         {
-            // Debounce keystrokes so we don't hammer the server on every character.
-            _plexSearchDebounce ??= CreatePlexDebounce();
-            _plexSearchDebounce.Stop();
-            _plexSearchDebounce.Start();
+            if (_plexSearchMode)
+            {
+                // Global search: debounce keystrokes so we don't hammer the server.
+                _plexSearchDebounce ??= CreatePlexDebounce();
+                _plexSearchDebounce.Stop();
+                _plexSearchDebounce.Start();
+            }
+            else
+            {
+                // Browse: narrow the already-loaded list client-side (instant, no round trip).
+                ApplyPlexNarrow();
+            }
         }
 
         private DispatcherTimer CreatePlexDebounce()
@@ -775,11 +1102,14 @@ namespace VideoPlayer
             UpdatePlexTabState();
         }
 
-        private void PlexResultsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void PlexResultsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (e.AddedItems.Count == 0) return;
-            if (PlexResultsBox.SelectedItem is PlexItem item)
-                PlayPlexItem(item);
+            if (PlexResultsBox.SelectedItem is not PlexItem item) return;
+
+            // Shows/seasons drill in; leaves play.
+            if (item.IsContainer) await PlexDrillInto(item);
+            else                  PlayPlexItem(item);
         }
 
         private void PlayPlexItem(PlexItem item)
