@@ -8,7 +8,7 @@
     <RootNamespace>VideoPlayer</RootNamespace>
     <AssemblyName>VideoPlayer</AssemblyName>
     <ApplicationIcon>VideoPlayer.ico</ApplicationIcon>
-    <Version>0.2.12</Version>
+    <Version>0.2.13</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,6 +32,8 @@
     <PackageReference Include="FlyleafLib" Version="3.10.2" />
     <PackageReference Include="FlyleafLib.Controls.WPF" Version="1.6.2" />
     <PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="8.0.1" />
+    <!-- Windows DPAPI for encrypting service secrets (Plex token) at rest. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

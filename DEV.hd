@@ -1,7 +1,26 @@
 ---
 id: 4qGnXmdVbtS0Gw684kokSV
-version: 1
+version: 2
 ---
 
-<p></p><p></p><p>Or from your IDE:</p><ul><li><p><strong>F5</strong>&nbsp;— build + run with debugger</p></li><li><p><strong>Ctrl+F5</strong>&nbsp;— build + run without debugger</p></li><li><p><strong>Ctrl+Shift+B</strong>&nbsp;— build only</p></li></ul><p><br></p><pre><code>dotnet run --project app-flyleaf                # Debug
-dotnet run --project app-flyleaf -c Release     # Release</code></pre><p></p>
+<p></p>
+
+<p></p>
+
+Or from your IDE:
+
+-   **F5** — build + run with debugger
+    
+-   **Ctrl+F5** — build + run without debugger
+    
+-   **Ctrl+Shift+B** — build only
+    
+
+  
+
+```
+dotnet run --project app-flyleaf                # Debug
+dotnet run --project app-flyleaf -c Release     # Release
+```
+
+<p></p>

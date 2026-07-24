@@ -22,6 +22,8 @@ using VideoPlayer.Services;
 
 namespace VideoPlayer
 {
+    public enum SidebarTab { Playlist, History, Plex }
+
     public partial class MainWindow : Window
     {
         private Player _player;
@@ -71,8 +73,17 @@ namespace VideoPlayer
             "VideoPlayer", "settings.json");
         private AppSettings _settings = new();
 
+        // Plex (separate ecosystem — not routed through the bookmarks service)
+        private readonly ServicesStore _services = new();
+        private PlexService _plex;
+        private PlexItem    _activePlex;      // set while a Plex item is playing; drives timeline reports
+        private int         _plexTimelineTick;
+        private DispatcherTimer _plexSearchDebounce;
+        private SidebarTab _activeTab = SidebarTab.Playlist;
+
         public ObservableCollection<Bookmark> PlaylistItems { get; } = new();
         public ObservableCollection<HistoryEntry> HistoryItems { get; } = new();
+        public ObservableCollection<PlexItem> PlexItems { get; } = new();
 
         public ICommand OpenUrlCommand  { get; }
         public ICommand PlayPauseCommand { get; }
@@ -258,6 +269,11 @@ namespace VideoPlayer
 
                             case Status.Ended:
                                 PlayPauseButton.Content = "▶";
+                                if (_activePlex != null && _plex != null)
+                                {
+                                    // Report final position so Plex marks it watched/resumable.
+                                    _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.Duration / 10000L);
+                                }
                                 if (_activeMuid != null && _api != null)
                                 {
                                     var muid    = _activeMuid;
@@ -287,6 +303,10 @@ namespace VideoPlayer
         {
             _auth = new PlaylistAuthService();
             _api  = new PlaylistApiService(_auth);
+
+            _services.Load();
+            _plex = new PlexService(_services);
+            UpdatePlexTabState();
 
             await LoadSettingsAsync();
 
@@ -418,25 +438,35 @@ namespace VideoPlayer
         // Sidebar tabs (Playlist / History)
         // ──────────────────────────────────────────────────────
 
-        private void ShowPlaylistTab_Click(object sender, RoutedEventArgs e) => SelectTab(history: false);
-        private void ShowHistoryTab_Click(object sender, RoutedEventArgs e)  => SelectTab(history: true);
+        private void ShowPlaylistTab_Click(object sender, RoutedEventArgs e) => SelectTab(SidebarTab.Playlist);
+        private void ShowHistoryTab_Click(object sender, RoutedEventArgs e)  => SelectTab(SidebarTab.History);
+        private void ShowPlexTab_Click(object sender, RoutedEventArgs e)     => SelectTab(SidebarTab.Plex);
 
-        private void SelectTab(bool history)
+        private void SelectTab(SidebarTab tab)
         {
-            PlaylistContent.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
-            HistoryContent.Visibility  = history ? Visibility.Visible   : Visibility.Collapsed;
+            _activeTab = tab;
+
+            PlaylistContent.Visibility = tab == SidebarTab.Playlist ? Visibility.Visible : Visibility.Collapsed;
+            HistoryContent.Visibility  = tab == SidebarTab.History  ? Visibility.Visible : Visibility.Collapsed;
+            PlexContent.Visibility     = tab == SidebarTab.Plex     ? Visibility.Visible : Visibility.Collapsed;
 
             // Underline tabs: active reads bright with an accent underline, inactive dims.
             var accent  = (Brush)FindResource("AccentBrush");
             var primary = (Brush)FindResource("TextPrimaryBrush");
             var muted   = (Brush)FindResource("TextMutedBrush");
 
-            PlaylistTabButton.Foreground  = history ? muted : primary;
-            PlaylistTabButton.BorderBrush  = history ? Brushes.Transparent : accent;
-            HistoryTabButton.Foreground   = history ? primary : muted;
-            HistoryTabButton.BorderBrush   = history ? accent : Brushes.Transparent;
+            StyleTab(PlaylistTabButton, tab == SidebarTab.Playlist, accent, primary, muted);
+            StyleTab(HistoryTabButton,  tab == SidebarTab.History,  accent, primary, muted);
+            StyleTab(PlexTabButton,     tab == SidebarTab.Plex,     accent, primary, muted);
 
-            if (history) RefreshHistoryView();
+            if (tab == SidebarTab.History) RefreshHistoryView();
+            if (tab == SidebarTab.Plex)    UpdatePlexTabState();
+        }
+
+        private static void StyleTab(Button btn, bool active, Brush accent, Brush primary, Brush muted)
+        {
+            btn.Foreground  = active ? primary : muted;
+            btn.BorderBrush = active ? accent  : Brushes.Transparent;
         }
 
         // ──────────────────────────────────────────────────────
@@ -519,6 +549,164 @@ namespace VideoPlayer
 
             if (_api != null)
                 await _api.DeleteBookmarkAsync(bm.Muid);
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Services (gear) + Plex
+        // ──────────────────────────────────────────────────────
+
+        private void OpenServices_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new ServicesSettingsDialog(_services) { Owner = this };
+            if (dialog.ShowDialog() == true)
+            {
+                // Config changed — rebuild the client and refresh the Plex tab.
+                _plex = new PlexService(_services);
+                UpdatePlexTabState();
+                if (_activeTab == SidebarTab.Plex && _services.IsPlexConfigured
+                    && !string.IsNullOrWhiteSpace(PlexSearchBox.Text))
+                {
+                    _ = RunPlexSearch(PlexSearchBox.Text);
+                }
+            }
+        }
+
+        /// <summary>Shows the configure/empty/results state for the Plex tab.</summary>
+        private void UpdatePlexTabState()
+        {
+            if (PlexStatusText == null) return; // called before the UI is ready
+
+            if (_services?.IsPlexConfigured != true)
+            {
+                PlexItems.Clear();
+                PlexStatusText.Text = "No Plex server configured. Open Services (⚙) to add one.";
+                PlexStatusText.Visibility = Visibility.Visible;
+            }
+            else if (PlexItems.Count == 0)
+            {
+                PlexStatusText.Text = string.IsNullOrWhiteSpace(PlexSearchBox?.Text)
+                    ? "Search your Plex libraries above."
+                    : "No results.";
+                PlexStatusText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                PlexStatusText.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void PlexSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            // Debounce keystrokes so we don't hammer the server on every character.
+            _plexSearchDebounce ??= CreatePlexDebounce();
+            _plexSearchDebounce.Stop();
+            _plexSearchDebounce.Start();
+        }
+
+        private DispatcherTimer CreatePlexDebounce()
+        {
+            var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+            t.Tick += async (s, _) =>
+            {
+                t.Stop();
+                await RunPlexSearch(PlexSearchBox.Text);
+            };
+            return t;
+        }
+
+        private async Task RunPlexSearch(string query)
+        {
+            if (_services?.IsPlexConfigured != true)
+            {
+                UpdatePlexTabState();
+                return;
+            }
+
+            query = query?.Trim() ?? "";
+            if (string.IsNullOrEmpty(query))
+            {
+                PlexItems.Clear();
+                UpdatePlexTabState();
+                return;
+            }
+
+            PlexStatusText.Text = "Searching…";
+            PlexStatusText.Visibility = Visibility.Visible;
+
+            try
+            {
+                var results = await _plex.SearchAsync(query);
+
+                // Ignore stale responses if the box has moved on since we fired.
+                if (PlexSearchBox.Text.Trim() != query) return;
+
+                PlexItems.Clear();
+                foreach (var item in results)
+                    PlexItems.Add(item);
+            }
+            catch (Exception ex)
+            {
+                App.Log($"[Plex] Search failed: {ex.Message}");
+                PlexItems.Clear();
+            }
+
+            UpdatePlexTabState();
+        }
+
+        private void PlexResultsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count == 0) return;
+            if (PlexResultsBox.SelectedItem is PlexItem item)
+                PlayPlexItem(item);
+        }
+
+        private void PlayPlexItem(PlexItem item)
+        {
+            var streamUrl = _plex?.ResolveStreamUrl(item);
+            if (string.IsNullOrEmpty(streamUrl))
+            {
+                MessageBox.Show("This Plex item has no playable file.", "Plex",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Report any in-progress Plex playback as stopped before switching items.
+            if (_activePlex != null && _player?.Status == Status.Playing)
+                _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.CurTime / 10000L);
+
+            // Plex is a separate ecosystem — detach from the bookmarks position-save path.
+            _activeMuid = null;
+            _activePlex = item;
+            _plexTimelineTick = 0;
+
+            // Resume where Plex left off, using the shared seek-on-play mechanism.
+            _seekOnPlay = item.HasResume ? item.ViewOffsetMs : null;
+
+            try
+            {
+                StatusText.Text = "Loading video...";
+                StatusText.Visibility = Visibility.Visible;
+
+                _player.Stop();
+
+                _currentUrl = streamUrl;
+                Title = $"Video Player v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3)} - {item.Title}";
+
+                // Local history (Plex items keyed by a stable plex:// id, not the tokenized URL).
+                _history.Record($"plex://{item.RatingKey}", item.Title);
+                if (HistoryContent.Visibility == Visibility.Visible)
+                    RefreshHistoryView();
+
+                App.Log($"[Plex] Opening ratingKey={item.RatingKey} resume={item.ViewOffsetMs}ms");
+                _player.OpenAsync(streamUrl);
+                _ = _plex.ReportTimelineAsync(item, "playing", item.ViewOffsetMs);
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = "Error loading video";
+                MessageBox.Show($"Error loading Plex video: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         // ──────────────────────────────────────────────────────
@@ -644,6 +832,17 @@ namespace VideoPlayer
                     _ = _api.SavePositionAsync(_activeMuid, seconds);
                 }
             }
+
+            // Report Plex playback progress every 10 seconds (separate ecosystem).
+            if (_activePlex != null && _plex != null)
+            {
+                _plexTimelineTick++;
+                if (_plexTimelineTick >= 20)
+                {
+                    _plexTimelineTick = 0;
+                    _ = _plex.ReportTimelineAsync(_activePlex, "playing", (long)time);
+                }
+            }
         }
 
         private string FormatTime(long milliseconds)
@@ -673,6 +872,12 @@ namespace VideoPlayer
         {
             try
             {
+                // Leaving the Plex ecosystem — report stop and detach so Timer_Tick
+                // stops sending Plex timeline updates for this playback.
+                if (_activePlex != null && _player?.Status == Status.Playing)
+                    _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.CurTime / 10000L);
+                _activePlex = null;
+
                 StatusText.Text = "Loading video...";
                 StatusText.Visibility = Visibility.Visible;
 
@@ -761,10 +966,14 @@ namespace VideoPlayer
                     var seconds = (int)(_player.CurTime / 10000000.0);
                     _ = _api.SavePositionAsync(_activeMuid, seconds);
                 }
+                if (_activePlex != null && _plex != null)
+                    _ = _plex.ReportTimelineAsync(_activePlex, "paused", _player.CurTime / 10000L);
                 _player.Pause();
             }
             else
             {
+                if (_activePlex != null && _plex != null)
+                    _ = _plex.ReportTimelineAsync(_activePlex, "playing", _player.CurTime / 10000L);
                 _player.Play();
             }
         }
@@ -807,6 +1016,10 @@ namespace VideoPlayer
                 var seconds = (int)(_player.CurTime / 10000000.0);
                 _ = _api.SavePositionAsync(_activeMuid, seconds);
             }
+
+            // Best-effort Plex progress report on close
+            if (_activePlex != null && _plex != null && _player?.Status == Status.Playing)
+                _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.CurTime / 10000L);
 
             _player?.Dispose();
         }
