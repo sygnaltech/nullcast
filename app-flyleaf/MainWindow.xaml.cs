@@ -157,10 +157,61 @@ namespace VideoPlayer
 
                 _ytdlpReady = true;
                 StatusText.Text = "Press Ctrl+O or File > Open URL to load a video";
+
+                // Self-heal a stale binary in the background (non-blocking, best-effort) so
+                // the "your yt-dlp is older than 90 days" warning never resurfaces.
+                _ = MaybeUpdateYtDlpAsync();
             }
             catch (Exception ex)
             {
                 StatusText.Text = $"Failed to initialize yt-dlp: {ex.Message}";
+            }
+        }
+
+        // yt-dlp is refreshed in the background when the local copy is older than this.
+        private static readonly TimeSpan YtDlpMaxAge = TimeSpan.FromDays(30);
+
+        /// <summary>
+        /// If the local yt-dlp is older than <see cref="YtDlpMaxAge"/>, run <c>yt-dlp -U</c>
+        /// in the background. Never blocks startup or playback; failures are logged and
+        /// ignored. After a check we stamp the file's timestamp so we don't re-check every
+        /// launch — only once per <see cref="YtDlpMaxAge"/> window until the next release.
+        /// </summary>
+        private async Task MaybeUpdateYtDlpAsync()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_ytdlpPath) || !File.Exists(_ytdlpPath)) return;
+
+                var age = DateTime.Now - File.GetLastWriteTime(_ytdlpPath);
+                if (age < YtDlpMaxAge) return;
+
+                App.Log($"[yt-dlp] Local copy is {age.Days}d old — updating in background.");
+
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName               = _ytdlpPath,
+                        Arguments              = "-U",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError  = true,
+                        UseShellExecute        = false,
+                        CreateNoWindow         = true,
+                    }
+                };
+                process.Start();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+                App.Log($"[yt-dlp] Update finished: {output.Trim().Replace("\r\n", " | ")}");
+
+                // yt-dlp -U may leave the old mtime (or report "up to date" without a
+                // rewrite); stamp it so the 30-day check resets either way.
+                try { File.SetLastWriteTime(_ytdlpPath, DateTime.Now); } catch { }
+            }
+            catch (Exception ex)
+            {
+                App.Log($"[yt-dlp] Background update failed: {ex.Message}");
             }
         }
 
