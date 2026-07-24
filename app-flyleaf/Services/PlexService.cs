@@ -144,6 +144,35 @@ namespace VideoPlayer.Services
             return results;
         }
 
+        /// <summary>
+        /// Fetch a single item by its ratingKey (used to replay a Plex entry from local
+        /// History, which only stores <c>plex://&lt;ratingKey&gt;</c>). Returns null if the
+        /// server is unreachable, the item is gone, or it has no playable Part.
+        /// </summary>
+        public async Task<PlexItem?> GetItemAsync(string ratingKey)
+        {
+            if (!IsConfigured || string.IsNullOrEmpty(ratingKey)) return null;
+
+            var baseUrl = _store.PlexBaseUrl;
+            var token   = _store.GetPlexToken();
+            try
+            {
+                var url = $"{baseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}" +
+                          $"?X-Plex-Token={Uri.EscapeDataString(token)}";
+                var body   = await _http.GetStringAsync(url);
+                var parsed = JsonSerializer.Deserialize<PlexSearchResponse>(body);
+                var meta   = parsed?.MediaContainer?.Metadata?.FirstOrDefault();
+                if (meta == null) return null;
+
+                var item = PlexItem.FromMetadata(meta);
+                return string.IsNullOrEmpty(item.PartKey) ? null : item;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private async Task<string?> FetchPartKeyAsync(string baseUrl, string token, string ratingKey)
         {
             try

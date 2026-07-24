@@ -493,8 +493,39 @@ namespace VideoPlayer
             {
                 _activeMuid = null;
                 _seekOnPlay = null;
+
+                // Plex history entries are stored as plex://<ratingKey> — they can't go
+                // through yt-dlp; re-resolve them against the Plex server instead.
+                if (entry.Url.StartsWith("plex://", StringComparison.OrdinalIgnoreCase))
+                {
+                    await PlayPlexFromHistory(entry.Url);
+                    return;
+                }
+
                 await PlayYouTubeUrl(entry.Url);
             }
+        }
+
+        /// <summary>Replay a Plex item recorded in local History (keyed by ratingKey).</summary>
+        private async Task PlayPlexFromHistory(string plexUrl)
+        {
+            if (_plex?.IsConfigured != true)
+            {
+                MessageBox.Show("Connect a Plex server (⚙ Services) to play this item.",
+                    "Plex", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var ratingKey = plexUrl.Substring("plex://".Length);
+            var item = await _plex.GetItemAsync(ratingKey);
+            if (item == null)
+            {
+                MessageBox.Show("This Plex item is no longer available on the server.",
+                    "Plex", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            PlayPlexItem(item);
         }
 
         private void CollapseToggle_Click(object sender, RoutedEventArgs e)
