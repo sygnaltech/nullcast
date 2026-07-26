@@ -332,6 +332,41 @@
             </Setter>
         </Style>
 
+        <!-- Category selector face: surface box with a label + chevron (opens a filter popup) -->
+        <Style x:Key="CategoryToggle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="#E7E9F1"/>
+            <Setter Property="FontSize"   Value="13"/>
+            <Setter Property="Cursor"     Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
+                                BorderThickness="1" CornerRadius="8" Padding="12,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="0" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                <TextBlock Grid.Column="1" Text="&#x25BE;" Foreground="#848B9F"
+                                           VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#7D97FF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Accent pill button (Connect to Playlist) -->
         <Style x:Key="AccentButton" TargetType="Button">
             <Setter Property="Background"  Value="#7D97FF"/>
@@ -534,7 +569,7 @@
                         Margin="0,0,11,0" Background="#22000000" ClipToBounds="True"
                         VerticalAlignment="Top"
                         Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
-                    <Image Source="{Binding ThumbUrl}" Stretch="UniformToFill"
+                    <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -584,7 +619,7 @@
                     <Grid>
                         <TextBlock Text="🎬" FontSize="34" Opacity="0.35"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        <Image Source="{Binding ThumbUrl}" Stretch="UniformToFill"
+                        <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
                                RenderOptions.BitmapScalingMode="HighQuality"
                                Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}"/>
                         <!-- Drill-in badge for shows/seasons -->
@@ -765,6 +800,11 @@
                             Click="SignOut_Click"
                             Style="{StaticResource TextButton}"
                             Visibility="Collapsed"/>
+                    <TextBlock x:Name="VersionLabel"
+                               Foreground="#565C6D"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Margin="16,0,0,0"/>
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -1076,33 +1116,98 @@
                                    Margin="20,14,16,2"
                                    Visibility="Collapsed"/>
 
-                        <!-- Category dropdown (Views + Genres) -->
-                        <ComboBox x:Name="PlexCategoryCombo"
-                                  Grid.Row="1"
-                                  Height="34"
-                                  Margin="20,4,20,4"
-                                  FontSize="13"
-                                  Visibility="Collapsed"
-                                  SelectionChanged="PlexCategory_SelectionChanged">
-                            <ComboBox.GroupStyle>
-                                <GroupStyle>
-                                    <GroupStyle.HeaderTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding Name}"
-                                                       Foreground="#565C6D"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       Margin="8,7,0,2"/>
-                                        </DataTemplate>
-                                    </GroupStyle.HeaderTemplate>
-                                </GroupStyle>
-                            </ComboBox.GroupStyle>
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Label}" FontSize="13"/>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
+                        <!-- Category selector (Views + Genres) with a type-to-filter popup -->
+                        <Grid x:Name="PlexCategoryHost" Grid.Row="1" Margin="20,4,20,4"
+                              Visibility="Collapsed">
+                            <ToggleButton x:Name="PlexCategoryButton"
+                                          Height="34"
+                                          Content="All"
+                                          Style="{StaticResource CategoryToggle}"
+                                          Click="PlexCategoryButton_Click"/>
+                            <Popup x:Name="PlexCategoryPopup"
+                                   PlacementTarget="{Binding ElementName=PlexCategoryButton}"
+                                   Placement="Bottom"
+                                   StaysOpen="False"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade"
+                                   Width="{Binding ActualWidth, ElementName=PlexCategoryButton}"
+                                   Closed="PlexCategoryPopup_Closed">
+                                <Border Background="#151826" BorderBrush="#242A3D" BorderThickness="1"
+                                        CornerRadius="8" Margin="0,4,0,8" Padding="4">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="3" Opacity="0.5"/>
+                                    </Border.Effect>
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <!-- Filter box -->
+                                        <Grid Grid.Row="0" Margin="4,4,4,6">
+                                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
+                                                    BorderThickness="1" CornerRadius="6"/>
+                                            <TextBox x:Name="PlexCategoryFilter"
+                                                     Height="32"
+                                                     VerticalContentAlignment="Center"
+                                                     Padding="10,0"
+                                                     FontSize="13"
+                                                     Background="Transparent"
+                                                     Foreground="#E7E9F1"
+                                                     CaretBrush="#E7E9F1"
+                                                     BorderThickness="0"
+                                                     TextChanged="PlexCategoryFilter_TextChanged"
+                                                     PreviewKeyDown="PlexCategoryFilter_PreviewKeyDown"/>
+                                            <TextBlock Text="Filter categories…"
+                                                       Foreground="#565C6D" Margin="11,0,0,0"
+                                                       FontSize="13" VerticalAlignment="Center"
+                                                       IsHitTestVisible="False">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Text.Length, ElementName=PlexCategoryFilter}" Value="0">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                        <!-- Grouped, scrollable category list -->
+                                        <ListBox x:Name="PlexCategoryList"
+                                                 Grid.Row="1"
+                                                 MaxHeight="320"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 ItemContainerStyle="{StaticResource ListItemContainer}"
+                                                 SelectionChanged="PlexCategoryList_SelectionChanged"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                            <ListBox.Resources>
+                                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                                            </ListBox.Resources>
+                                            <ListBox.GroupStyle>
+                                                <GroupStyle>
+                                                    <GroupStyle.HeaderTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding Name}"
+                                                                       Foreground="#565C6D"
+                                                                       FontSize="11"
+                                                                       FontWeight="SemiBold"
+                                                                       Margin="8,7,0,2"/>
+                                                        </DataTemplate>
+                                                    </GroupStyle.HeaderTemplate>
+                                                </GroupStyle>
+                                            </ListBox.GroupStyle>
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Label}" FontSize="13" Margin="8,6"/>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Grid>
+                                </Border>
+                            </Popup>
+                        </Grid>
 
                         <!-- Filter / search box with placeholder -->
                         <Grid Grid.Row="2" Margin="20,4,20,8">
@@ -1144,14 +1249,54 @@
                                    Margin="20,0,16,8"
                                    Visibility="Collapsed"/>
 
-                        <!-- Status / empty state (unconfigured, loading, no results) -->
-                        <TextBlock x:Name="PlexStatusText"
-                                   Grid.Row="4"
-                                   Foreground="#848B9F"
-                                   FontSize="12"
-                                   Margin="20,4,20,4"
-                                   TextWrapping="Wrap"
-                                   Visibility="Collapsed"/>
+                        <!-- Status / empty state (unconfigured, loading, no results).
+                             The spinner shows only during async loads. -->
+                        <Grid Grid.Row="4" Margin="20,4,20,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <!-- Indeterminate spinner (rotates only while visible) -->
+                            <Grid x:Name="PlexSpinner" Grid.Column="0"
+                                  Width="15" Height="15" Margin="0,0,8,0"
+                                  VerticalAlignment="Center" Visibility="Collapsed">
+                                <Ellipse Stroke="#2A3042" StrokeThickness="2"/>
+                                <Ellipse Stroke="#7D97FF" StrokeThickness="2"
+                                         StrokeDashArray="4 20" StrokeDashCap="Round"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform/>
+                                    </Ellipse.RenderTransform>
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsVisible" Value="True">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard Name="PlexSpinnerSb">
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                    From="0" To="360" Duration="0:0:0.85"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="PlexSpinnerSb"/>
+                                                    </Trigger.ExitActions>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                            </Grid>
+                            <TextBlock x:Name="PlexStatusText"
+                                       Grid.Column="1"
+                                       Foreground="#848B9F"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Visibility="Collapsed"/>
+                        </Grid>
 
                         <!-- View toggle (list vs. tiles) — right-aligned above the results -->
                         <StackPanel x:Name="PlexViewToolbar"

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -102,6 +103,10 @@ namespace VideoPlayer
         private int _plexLoadToken;                        // stale-guard for async browse loads
         private bool _plexFullscreen;                      // full-screen browse takeover active
         private bool _plexResumeAfterFullscreen;           // was the player playing when we took over?
+        private ICollectionView _plexCategoryView;         // grouped + filtered view over _plexCategories
+        private string _plexCategoryFilter = "";           // current text in the category filter box
+        private int _plexRenderToken;                      // stale-guard for the batched list fill
+        private ScrollViewer _plexScroller;                // cached results ScrollViewer (scroll-to-top)
 
         // Segment pill colors (active vs inactive) — mirror the PlexSegment XAML style.
         private static readonly Brush SegActiveBg   = Frozen(Color.FromArgb(0x21, 0x7D, 0x97, 0xFF));
@@ -137,13 +142,17 @@ namespace VideoPlayer
             InitializeComponent();
             DataContext = this;
 
-            // Group the Plex category dropdown into "Views" and "Genres" sections.
+            // Group the Plex category selector into "Views" and "Genres", with a live filter.
             var catView = new CollectionViewSource { Source = _plexCategories };
             catView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PlexCategory.Group)));
-            PlexCategoryCombo.ItemsSource = catView.View;
+            _plexCategoryView = catView.View;
+            _plexCategoryView.Filter = PlexCategoryFilterPredicate;
+            PlexCategoryList.ItemsSource = _plexCategoryView;
 
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            Title = $"Video Player v{v.Major}.{v.Minor}.{v.Build}";
+            var versionText = $"v{v.Major}.{v.Minor}.{v.Build}";
+            Title = $"Video Player {versionText}";
+            VersionLabel.Text = versionText;
 
             OpenUrlCommand   = new RelayCommand(_ => OpenUrl_Click(null, null));
             PlayPauseCommand = new RelayCommand(_ => PlayPause_Click(null, null));
@@ -741,8 +750,9 @@ namespace VideoPlayer
             {
                 PlexItems.Clear();
                 PlexLibraryBar.Visibility   = Visibility.Collapsed;
-                PlexCategoryCombo.Visibility = Visibility.Collapsed;
+                PlexCategoryHost.Visibility  = Visibility.Collapsed;
                 PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
+                if (PlexSpinner != null) PlexSpinner.Visibility = Visibility.Collapsed;
                 if (PlexViewToolbar != null) PlexViewToolbar.Visibility = Visibility.Collapsed;
                 PlexStatusText.Text = "No Plex server configured. Open Services (⚙) to add one.";
                 PlexStatusText.Visibility = Visibility.Visible;
@@ -750,6 +760,8 @@ namespace VideoPlayer
             }
 
             PlexLibraryBar.Visibility = Visibility.Visible;
+            // Any load that ends here is finished — stop the spinner.
+            if (PlexSpinner != null) PlexSpinner.Visibility = Visibility.Collapsed;
             // The list/tile toggle stays available whenever there's something to look at.
             if (PlexViewToolbar != null)
                 PlexViewToolbar.Visibility = PlexItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -767,6 +779,14 @@ namespace VideoPlayer
             {
                 PlexStatusText.Visibility = Visibility.Collapsed;
             }
+        }
+
+        /// <summary>Show the animated spinner + a status line while an async load is in flight.</summary>
+        private void ShowPlexLoading(string text)
+        {
+            if (PlexSpinner != null) PlexSpinner.Visibility = Visibility.Visible;
+            PlexStatusText.Text = text;
+            PlexStatusText.Visibility = Visibility.Visible;
         }
 
         // ──────────────────────────────────────────────────────
@@ -948,7 +968,7 @@ namespace VideoPlayer
             _plexSection    = section;
             _plexDrill.Clear();
 
-            PlexCategoryCombo.Visibility = Visibility.Visible;
+            PlexCategoryHost.Visibility  = Visibility.Visible;
             PlexSearchPlaceholder.Text   = "Filter titles…";
             PlexSearchBox.Text           = "";   // reset the narrow filter
             StylePlexSegments();
@@ -965,7 +985,7 @@ namespace VideoPlayer
             _plexCategory   = null;
             _plexDrill.Clear();
 
-            PlexCategoryCombo.Visibility = Visibility.Collapsed;
+            PlexCategoryHost.Visibility  = Visibility.Collapsed;
             PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
             PlexSearchPlaceholder.Text   = "Search Plex…";
             PlexSearchBox.Text           = "";
@@ -995,13 +1015,77 @@ namespace VideoPlayer
             foreach (var g in genres)
                 _plexCategories.Add(new PlexCategory(g.Title, PlexBrowseView.Genre, "Genres") { GenreId = g.Id });
 
-            PlexCategoryCombo.SelectedIndex = 0;   // "All" → fires PlexCategory_SelectionChanged
+            // Default to the first "Views" entry ("All") and browse it.
+            await ApplyPlexCategory(_plexCategories.FirstOrDefault());
         }
 
-        private async void PlexCategory_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        // ──────────────────────────────────────────────────────
+        // Category selector: a filterable, scrollable popup that
+        // replaces the old (truncating, unfilterable) ComboBox.
+        // ──────────────────────────────────────────────────────
+
+        private void PlexCategoryButton_Click(object sender, RoutedEventArgs e)
         {
-            if (PlexCategoryCombo.SelectedItem is not PlexCategory cat) return;
+            if (PlexCategoryButton.IsChecked == true)
+            {
+                PlexCategoryFilter.Text = "";           // start each open with a clean filter
+                PlexCategoryPopup.IsOpen = true;
+                // Focus the filter box once the popup has rendered.
+                Dispatcher.BeginInvoke(new Action(() => PlexCategoryFilter.Focus()),
+                                       DispatcherPriority.Input);
+            }
+            else
+            {
+                PlexCategoryPopup.IsOpen = false;
+            }
+        }
+
+        private void PlexCategoryPopup_Closed(object sender, EventArgs e)
+            => PlexCategoryButton.IsChecked = false;
+
+        private void PlexCategoryFilter_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            _plexCategoryFilter = PlexCategoryFilter.Text ?? "";
+            _plexCategoryView?.Refresh();
+        }
+
+        private void PlexCategoryFilter_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
+                PlexCategoryPopup.IsOpen = false;
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                // Commit the first match, if any.
+                var first = _plexCategoryView?.Cast<PlexCategory>().FirstOrDefault();
+                if (first != null) { _ = ApplyPlexCategory(first); PlexCategoryPopup.IsOpen = false; }
+                e.Handled = true;
+            }
+        }
+
+        private async void PlexCategoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (PlexCategoryList.SelectedItem is not PlexCategory cat) return;
+            if (ReferenceEquals(cat, _plexCategory)) return;   // ignore programmatic re-selection
+            PlexCategoryPopup.IsOpen = false;
+            await ApplyPlexCategory(cat);
+        }
+
+        /// <summary>Filter predicate: match category labels against the popup's filter text.</summary>
+        private bool PlexCategoryFilterPredicate(object o)
+            => string.IsNullOrEmpty(_plexCategoryFilter)
+               || (o is PlexCategory c &&
+                   c.Label.Contains(_plexCategoryFilter, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Select a category (updates the button face + list) and browse it.</summary>
+        private async Task ApplyPlexCategory(PlexCategory cat)
+        {
+            if (cat == null) return;
             _plexCategory = cat;
+            PlexCategoryButton.Content = cat.Label;
+            PlexCategoryList.SelectedItem = cat;
             await LoadPlexBrowse();
         }
 
@@ -1013,8 +1097,7 @@ namespace VideoPlayer
             RebuildBreadcrumb();
 
             int token = ++_plexLoadToken;
-            PlexStatusText.Text = "Loading…";
-            PlexStatusText.Visibility = Visibility.Visible;
+            ShowPlexLoading("Loading…");
 
             List<PlexItem> items;
             try
@@ -1039,25 +1122,74 @@ namespace VideoPlayer
         private void ApplyPlexNarrow()
         {
             var q = _plexSearchMode ? "" : (PlexSearchBox?.Text ?? "").Trim();
-            PlexItems.Clear();
+            var filtered = new List<PlexItem>(_plexCurrentItems.Count);
             foreach (var it in _plexCurrentItems)
             {
                 if (q.Length == 0
                     || it.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || it.Subtitle.Contains(q, StringComparison.OrdinalIgnoreCase))
                 {
-                    PlexItems.Add(it);
+                    filtered.Add(it);
                 }
             }
+            RenderPlexItems(filtered);
+        }
+
+        /// <summary>
+        /// Populates the bound <see cref="PlexItems"/> in small batches, yielding to the
+        /// dispatcher between them. The tile grid isn't UI-virtualized, so adding a few hundred
+        /// posters in one synchronous burst would realize every tile (and start every image
+        /// download) at once and freeze the UI — the spinner would stall and the mouse would
+        /// lock. Batching keeps input and animation flowing while the grid fills, and a render
+        /// token cancels an in-flight fill the moment a newer one starts (e.g. a fast category
+        /// switch or each keystroke in the narrow filter). Also resets the scroll to the top.
+        /// </summary>
+        private async void RenderPlexItems(IReadOnlyList<PlexItem> items)
+        {
+            int myToken = ++_plexRenderToken;
+
+            PlexItems.Clear();
+            ScrollPlexToTop();
+
+            const int batch = 24;
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (myToken != _plexRenderToken) return;   // a newer render superseded us
+                PlexItems.Add(items[i]);
+                if ((i + 1) % batch == 0)
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+            }
+
+            if (myToken != _plexRenderToken) return;
             UpdatePlexTabState();
+        }
+
+        /// <summary>Reset the Plex results list back to the top (e.g. after a category change).</summary>
+        private void ScrollPlexToTop()
+        {
+            _plexScroller ??= FindDescendant<ScrollViewer>(PlexResultsBox);
+            _plexScroller?.ScrollToTop();
+        }
+
+        private static T FindDescendant<T>(DependencyObject root) where T : DependencyObject
+        {
+            if (root == null) return null;
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is T hit) return hit;
+                var deeper = FindDescendant<T>(child);
+                if (deeper != null) return deeper;
+            }
+            return null;
         }
 
         /// <summary>Drill from a show into its seasons, or a season into its episodes.</summary>
         private async Task PlexDrillInto(PlexItem container)
         {
             int token = ++_plexLoadToken;
-            PlexStatusText.Text = "Loading…";
-            PlexStatusText.Visibility = Visibility.Visible;
+            ShowPlexLoading("Loading…");
 
             List<PlexItem> kids;
             try   { kids = await _plex.GetChildrenAsync(container.RatingKey); }
@@ -1190,13 +1322,11 @@ namespace VideoPlayer
             query = query?.Trim() ?? "";
             if (string.IsNullOrEmpty(query))
             {
-                PlexItems.Clear();
-                UpdatePlexTabState();
+                RenderPlexItems(System.Array.Empty<PlexItem>());
                 return;
             }
 
-            PlexStatusText.Text = "Searching…";
-            PlexStatusText.Visibility = Visibility.Visible;
+            ShowPlexLoading("Searching…");
 
             try
             {
@@ -1205,17 +1335,13 @@ namespace VideoPlayer
                 // Ignore stale responses if the box has moved on since we fired.
                 if (PlexSearchBox.Text.Trim() != query) return;
 
-                PlexItems.Clear();
-                foreach (var item in results)
-                    PlexItems.Add(item);
+                RenderPlexItems(results);
             }
             catch (Exception ex)
             {
                 App.Log($"[Plex] Search failed: {ex.Message}");
-                PlexItems.Clear();
+                RenderPlexItems(System.Array.Empty<PlexItem>());
             }
-
-            UpdatePlexTabState();
         }
 
         private async void PlexResultsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1223,9 +1349,18 @@ namespace VideoPlayer
             if (e.AddedItems.Count == 0) return;
             if (PlexResultsBox.SelectedItem is not PlexItem item) return;
 
-            // Shows/seasons drill in; leaves play.
-            if (item.IsContainer) await PlexDrillInto(item);
-            else                  PlayPlexItem(item);
+            // Shows/seasons drill in (staying in full-screen browse); leaves play.
+            if (item.IsContainer)
+            {
+                await PlexDrillInto(item);
+            }
+            else
+            {
+                // Picking something to play collapses the full-screen takeover back to the
+                // split view. Don't resume the old paused item — we're starting a new one.
+                if (_plexFullscreen) ExitPlexFullscreen(resumeVideo: false, reapply: true);
+                PlayPlexItem(item);
+            }
         }
 
         private void PlayPlexItem(PlexItem item)

@@ -136,8 +136,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{baseUrl}/hubs/search?query={Uri.EscapeDataString(query.Trim())}" +
                           $"&limit=30&includeGenres=1&X-Plex-Token={Uri.EscapeDataString(token)}";
-                var body = await _http.GetStringAsync(url);
-                var parsed = JsonSerializer.Deserialize<PlexSearchResponse>(body);
+                var parsed = await GetJsonAsync(url).ConfigureAwait(false);
 
                 var metas = new List<PlexMetadata>();
                 foreach (var hub in parsed?.MediaContainer?.Hub ?? Array.Empty<PlexHub>())
@@ -187,8 +186,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{baseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}" +
                           $"?includeGenres=1&X-Plex-Token={Uri.EscapeDataString(token)}";
-                var body   = await _http.GetStringAsync(url);
-                var parsed = JsonSerializer.Deserialize<PlexSearchResponse>(body);
+                var parsed = await GetJsonAsync(url).ConfigureAwait(false);
                 var meta   = parsed?.MediaContainer?.Metadata?.FirstOrDefault();
                 if (meta == null) return null;
 
@@ -207,8 +205,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{baseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}" +
                           $"?X-Plex-Token={Uri.EscapeDataString(token)}";
-                var body   = await _http.GetStringAsync(url);
-                var parsed = JsonSerializer.Deserialize<PlexSearchResponse>(body);
+                var parsed = await GetJsonAsync(url).ConfigureAwait(false);
                 var meta   = parsed?.MediaContainer?.Metadata?.FirstOrDefault();
                 return meta?.Media?.FirstOrDefault()?.Part?.FirstOrDefault()?.Key;
             }
@@ -310,7 +307,9 @@ namespace VideoPlayer.Services
                 var url = $"{_store.PlexBaseUrl}/library/sections/{Uri.EscapeDataString(sectionKey)}/all" +
                           $"?type={typeNum}&sort={sort}{extra}&includeGenres=1" +
                           $"&X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
-                var parsed = await GetJsonAsync(url, limit);
+                // ConfigureAwait(false): build the (up to 300) items on a thread-pool thread, not
+                // the UI thread. The UI caller resumes on the dispatcher via its own await.
+                var parsed = await GetJsonAsync(url, limit).ConfigureAwait(false);
 
                 foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
                 {
@@ -337,7 +336,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{_store.PlexBaseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}/children" +
                           $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
-                var parsed = await GetJsonAsync(url, 300);
+                var parsed = await GetJsonAsync(url, 300).ConfigureAwait(false);
                 foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
                     results.Add(Build(m));
             }
@@ -349,6 +348,11 @@ namespace VideoPlayer.Services
         /// <summary>
         /// GET + JSON-deserialize, optionally paging with the Plex container-size headers so large
         /// libraries return in one shot rather than the server's small default page.
+        ///
+        /// The response is streamed and deserialized asynchronously with
+        /// <see cref="ConfigureAwait"/>(false), so parsing a large library (hundreds of items,
+        /// now with genres) runs on a thread-pool thread and never blocks the UI. Callers touch
+        /// the UI only after awaiting, back on the dispatcher.
         /// </summary>
         private static async Task<PlexSearchResponse?> GetJsonAsync(string url, int? containerSize = null)
         {
@@ -358,10 +362,11 @@ namespace VideoPlayer.Services
                 req.Headers.Add("X-Plex-Container-Start", "0");
                 req.Headers.Add("X-Plex-Container-Size", cs.ToString());
             }
-            var resp = await _http.SendAsync(req);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead)
+                                        .ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
-            var body = await resp.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<PlexSearchResponse>(body);
+            await using var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            return await JsonSerializer.DeserializeAsync<PlexSearchResponse>(stream).ConfigureAwait(false);
         }
 
         // ──────────────────────────────────────────────────────
