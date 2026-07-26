@@ -2220,10 +2220,11 @@ namespace VideoPlayer
         {
             if (e.ClickCount == 2)
             {
-                // A double-click maximizes/normalizes the window and must NOT toggle
+                // A double-click enters/exits the borderless "cinema" fullscreen
+                // (video fills the whole screen, no chrome) and must NOT toggle
                 // play/pause — cancel the pending single-click action.
                 _clickTimer?.Stop();
-                ToggleMaximizeNormal();
+                ToggleFullscreen();
                 e.Handled = true;
             }
             else if (e.ClickCount == 1)
@@ -2245,16 +2246,6 @@ namespace VideoPlayer
                 _clickTimer.Start();
                 e.Handled = true;
             }
-        }
-
-        /// <summary>Double-click behaviour: toggle Maximized ↔ Normal (windowed
-        /// fullscreen stays on F11/Esc). Never affects the play/pause state.</summary>
-        private void ToggleMaximizeNormal()
-        {
-            if (_isFullscreen) return; // borderless fullscreen is managed via F11/Esc
-            WindowState = WindowState == WindowState.Maximized
-                ? WindowState.Normal
-                : WindowState.Maximized;
         }
 
         private void VideoArea_MouseMove(object sender, MouseEventArgs e)
