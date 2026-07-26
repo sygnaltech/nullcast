@@ -37,6 +37,34 @@ namespace VideoPlayer.Services
         public bool IsConfigured => _store.IsPlexConfigured;
 
         // ──────────────────────────────────────────────────────
+        // Item materialisation (thumb URL needs server + token, which
+        // the static PlexItem.FromMetadata can't reach — do it here).
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>FromMetadata + resolve the absolute poster URL for the tile/list views.</summary>
+        private PlexItem Build(PlexMetadata m)
+        {
+            var item = PlexItem.FromMetadata(m);
+            item.ThumbUrl = ResolveThumbUrl(item.ThumbPath);
+            return item;
+        }
+
+        /// <summary>
+        /// Token-signed poster URL for a thumb path, resized server-side via Plex's photo
+        /// transcoder so we pull small thumbnails rather than full-resolution art. Null when
+        /// unconfigured or the item has no thumb.
+        /// </summary>
+        public string? ResolveThumbUrl(string? thumbPath, int width = 240, int height = 360)
+        {
+            if (!IsConfigured || string.IsNullOrEmpty(thumbPath)) return null;
+            var token = _store.GetPlexToken();
+            return $"{_store.PlexBaseUrl}/photo/:/transcode" +
+                   $"?width={width}&height={height}&minSize=1&upscale=1" +
+                   $"&url={Uri.EscapeDataString(thumbPath)}" +
+                   $"&X-Plex-Token={Uri.EscapeDataString(token)}";
+        }
+
+        // ──────────────────────────────────────────────────────
         // Connection test (used by the settings dialog)
         // ──────────────────────────────────────────────────────
 
@@ -107,7 +135,7 @@ namespace VideoPlayer.Services
             try
             {
                 var url = $"{baseUrl}/hubs/search?query={Uri.EscapeDataString(query.Trim())}" +
-                          $"&limit=30&X-Plex-Token={Uri.EscapeDataString(token)}";
+                          $"&limit=30&includeGenres=1&X-Plex-Token={Uri.EscapeDataString(token)}";
                 var body = await _http.GetStringAsync(url);
                 var parsed = JsonSerializer.Deserialize<PlexSearchResponse>(body);
 
@@ -125,7 +153,7 @@ namespace VideoPlayer.Services
                     // Only leaf, directly-playable types.
                     if (type is not ("movie" or "episode" or "clip" or "track")) continue;
 
-                    var item = PlexItem.FromMetadata(m);
+                    var item = Build(m);
                     if (!string.IsNullOrEmpty(item.RatingKey) && !seen.Add(item.RatingKey)) continue;
 
                     // Some hub results omit Media/Part — fetch full metadata to get the Part key.
@@ -158,13 +186,13 @@ namespace VideoPlayer.Services
             try
             {
                 var url = $"{baseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}" +
-                          $"?X-Plex-Token={Uri.EscapeDataString(token)}";
+                          $"?includeGenres=1&X-Plex-Token={Uri.EscapeDataString(token)}";
                 var body   = await _http.GetStringAsync(url);
                 var parsed = JsonSerializer.Deserialize<PlexSearchResponse>(body);
                 var meta   = parsed?.MediaContainer?.Metadata?.FirstOrDefault();
                 if (meta == null) return null;
 
-                var item = PlexItem.FromMetadata(meta);
+                var item = Build(meta);
                 return string.IsNullOrEmpty(item.PartKey) ? null : item;
             }
             catch
@@ -280,7 +308,7 @@ namespace VideoPlayer.Services
             try
             {
                 var url = $"{_store.PlexBaseUrl}/library/sections/{Uri.EscapeDataString(sectionKey)}/all" +
-                          $"?type={typeNum}&sort={sort}{extra}" +
+                          $"?type={typeNum}&sort={sort}{extra}&includeGenres=1" +
                           $"&X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
                 var parsed = await GetJsonAsync(url, limit);
 
@@ -288,7 +316,7 @@ namespace VideoPlayer.Services
                 {
                     // "Recently Watched" filters client-side: only items actually watched.
                     if (view == PlexBrowseView.RecentlyWatched && (m.LastViewedAt ?? 0) <= 0) continue;
-                    results.Add(PlexItem.FromMetadata(m));
+                    results.Add(Build(m));
                 }
             }
             catch { /* empty → UI shows "nothing here" */ }
@@ -311,7 +339,7 @@ namespace VideoPlayer.Services
                           $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
                 var parsed = await GetJsonAsync(url, 300);
                 foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
-                    results.Add(PlexItem.FromMetadata(m));
+                    results.Add(Build(m));
             }
             catch { /* empty */ }
 

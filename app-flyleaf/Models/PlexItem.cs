@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace VideoPlayer.Models
@@ -65,6 +67,15 @@ namespace VideoPlayer.Models
         [JsonPropertyName("childCount")]       public int?         ChildCount       { get; set; } // seasons on a show
         [JsonPropertyName("leafCount")]        public int?         LeafCount        { get; set; } // episodes total
         [JsonPropertyName("viewedLeafCount")]  public int?         ViewedLeafCount  { get; set; } // episodes watched
+        // Category tags. Present on /library/metadata/{id} and on /all listings when
+        // requested with ?includeGenres=1.
+        [JsonPropertyName("Genre")]            public PlexTag[]?   Genre            { get; set; }
+    }
+
+    /// <summary>A Plex tag row (Genre, Country, Director…). We only read the display label.</summary>
+    public class PlexTag
+    {
+        [JsonPropertyName("tag")] public string? Tag { get; set; }
     }
 
     public class PlexMedia
@@ -134,6 +145,18 @@ namespace VideoPlayer.Models
         public string? PartKey     { get; set; }
         public long    DurationMs  { get; set; }
         public long    ViewOffsetMs { get; set; }
+
+        /// <summary>Raw Plex thumb path (e.g. <c>/library/metadata/49570/thumb/169…</c>), or null.</summary>
+        public string? ThumbPath   { get; set; }
+        /// <summary>Absolute, token-signed poster URL. Filled in by <c>PlexService</c> (needs server + token).</summary>
+        public string? ThumbUrl    { get; set; }
+        public bool    HasThumb => !string.IsNullOrEmpty(ThumbUrl);
+
+        /// <summary>Category tags (Plex genres) for this item, in server order.</summary>
+        public List<string> Genres { get; set; } = new();
+        public bool    HasTags => Genres.Count > 0;
+        /// <summary>Genres joined for the compact list row, e.g. "Action · Sci-Fi".</summary>
+        public string  TagLine => string.Join("  ·  ", Genres);
 
         // Browse metadata (0 when unknown).
         public long    AddedAt         { get; set; }
@@ -221,6 +244,9 @@ namespace VideoPlayer.Models
                 TypeLabel       = typeLabel,
                 Kind            = type,
                 RatingKey       = m.RatingKey ?? "",
+                ThumbPath       = m.Thumb,
+                Genres          = m.Genre?.Select(g => g.Tag).Where(t => !string.IsNullOrEmpty(t)).Select(t => t!).ToList()
+                                  ?? new List<string>(),
                 PartKey         = m.Media?.Length > 0 ? m.Media[0].Part?[0]?.Key : null,
                 DurationMs      = m.Duration ?? 0,
                 ViewOffsetMs    = m.ViewOffset ?? 0,

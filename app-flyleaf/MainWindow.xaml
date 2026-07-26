@@ -464,6 +464,169 @@
         </Style>
 
         <!-- ══════════════════════════════════════════════════════
+             Thin dark scrollbar — the house style. REQUIRED on every
+             scrollable list (see STYLE-GUIDE.md). Apply per-list with:
+               <ListBox.Resources>
+                 <Style TargetType="{x:Type ScrollBar}"
+                        BasedOn="{StaticResource ThinDarkScrollBar}"/>
+               </ListBox.Resources>
+             ══════════════════════════════════════════════════════ -->
+        <Style x:Key="ThinDarkScrollBar" TargetType="{x:Type ScrollBar}">
+            <Setter Property="Width"      Value="9"/>
+            <Setter Property="MinWidth"   Value="9"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Background="Transparent" Width="9">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Height="0"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="{x:Type Thumb}">
+                                                <Border x:Name="ThumbBd" Background="#24FFFFFF" CornerRadius="4" Margin="2,0"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBd" Property="Background" Value="#3DFFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Height="0"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ══════════════════════════════════════════════════════
+             Plex results — genre chip + two swappable views
+             (compact list vs. poster tiles). Swapped in code-behind
+             by ApplyPlexViewMode(); toggled from the toolbar above
+             the list and remembered in settings.
+             ══════════════════════════════════════════════════════ -->
+
+        <!-- One rounded genre/category chip -->
+        <DataTemplate x:Key="PlexGenreChip">
+            <Border Background="#14FFFFFF" CornerRadius="4" Margin="0,4,4,0" Padding="6,2">
+                <TextBlock Text="{Binding}" FontSize="10" Foreground="#B7BCCB"/>
+            </Border>
+        </DataTemplate>
+
+        <!-- Compact list row: small poster · title / subtitle / meta / genres · drill chevron -->
+        <DataTemplate x:Key="PlexListItemTemplate">
+            <Grid Margin="11,9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <!-- Small poster (hidden when the item has no artwork) -->
+                <Border Grid.Column="0" Width="36" Height="54" CornerRadius="4"
+                        Margin="0,0,11,0" Background="#22000000" ClipToBounds="True"
+                        VerticalAlignment="Top"
+                        Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
+                    <Image Source="{Binding ThumbUrl}" Stretch="UniformToFill"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                               TextWrapping="Wrap" FontSize="14" FontWeight="Medium"
+                               LineHeight="19" Foreground="#E7E9F1"/>
+                    <TextBlock Text="{Binding Subtitle}"
+                               FontSize="12" Foreground="#848B9F" Margin="0,6,0,0"
+                               TextTrimming="CharacterEllipsis">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Subtitle}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding MetaLine}"
+                               FontSize="12" Foreground="#7D97FF" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding TagLine}"
+                               FontSize="11" Foreground="#848B9F" Margin="0,4,0,0"
+                               TextTrimming="CharacterEllipsis"
+                               Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibility}}"/>
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="›" FontSize="20" Foreground="#565C6D"
+                           VerticalAlignment="Center" Margin="8,0,4,0"
+                           Visibility="{Binding IsContainer, Converter={StaticResource BoolToVisibility}}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Poster tile: artwork · title · subtitle/meta · genre chips.
+             Width is tuned so two tiles fit the 325px sidebar (allowing for the
+             9px scrollbar) and more columns appear in the full-screen browse mode. -->
+        <DataTemplate x:Key="PlexTileItemTemplate">
+            <Grid Width="134" Margin="6,6,6,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <!-- Poster (2:3) with placeholder + drill badge -->
+                <Border Grid.Row="0" Height="200" CornerRadius="8"
+                        Background="#1AFFFFFF" ClipToBounds="True">
+                    <Grid>
+                        <TextBlock Text="🎬" FontSize="34" Opacity="0.35"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Image Source="{Binding ThumbUrl}" Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}"/>
+                        <!-- Drill-in badge for shows/seasons -->
+                        <Border Background="#B30F1118" CornerRadius="11" Width="22" Height="22"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
+                                Visibility="{Binding IsContainer, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="›" FontSize="15" Foreground="#E7E9F1"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="0,-2,0,0"/>
+                        </Border>
+                    </Grid>
+                </Border>
+                <TextBlock Grid.Row="1" Text="{Binding Title}"
+                           FontSize="13" FontWeight="Medium" Foreground="#E7E9F1"
+                           Margin="1,7,1,0" TextWrapping="Wrap" MaxHeight="36"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Row="2" Text="{Binding MetaLine}"
+                           FontSize="11" Foreground="#7D97FF" Margin="1,3,1,0"
+                           TextTrimming="CharacterEllipsis"/>
+                <!-- Genre chips -->
+                <ItemsControl Grid.Row="3" ItemsSource="{Binding Genres}"
+                              Margin="1,2,1,0"
+                              ItemTemplate="{StaticResource PlexGenreChip}"
+                              Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibility}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Items panels: vertical list vs. wrapping tile grid -->
+        <ItemsPanelTemplate x:Key="PlexListPanel">
+            <VirtualizingStackPanel/>
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="PlexTilePanel">
+            <WrapPanel Orientation="Horizontal"/>
+        </ItemsPanelTemplate>
+
+        <!-- ══════════════════════════════════════════════════════
              Video right-click menu (YouTube-style, translucent)
              ══════════════════════════════════════════════════════ -->
         <Style x:Key="VideoMenuItem" TargetType="MenuItem">
@@ -609,8 +772,8 @@
         <!-- Row 1: Video area (left) + Playlist column (right) -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition x:Name="VideoColumn" Width="*"/>
+                <ColumnDefinition x:Name="PanelColumn" Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <!-- Video area -->
@@ -639,7 +802,7 @@
             <!-- Playlist column: content panel + collapse tab -->
             <Grid Grid.Column="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition x:Name="SidePanelColumn" Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
@@ -734,43 +897,9 @@
                              ItemsSource="{Binding PlaylistItems}"
                              SelectionChanged="PlaylistBox_SelectionChanged"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <!-- Dark 9px scrollbar scoped to this ListBox only -->
+                        <!-- House thin dark scrollbar (see STYLE-GUIDE.md) -->
                         <ListBox.Resources>
-                            <Style TargetType="{x:Type ScrollBar}">
-                                <Setter Property="Width"      Value="9"/>
-                                <Setter Property="MinWidth"   Value="9"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="{x:Type ScrollBar}">
-                                            <Grid Background="Transparent" Width="9">
-                                                <Track x:Name="PART_Track" IsDirectionReversed="True">
-                                                    <Track.DecreaseRepeatButton>
-                                                        <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Height="0"/>
-                                                    </Track.DecreaseRepeatButton>
-                                                    <Track.Thumb>
-                                                        <Thumb>
-                                                            <Thumb.Template>
-                                                                <ControlTemplate TargetType="{x:Type Thumb}">
-                                                                    <Border x:Name="ThumbBd" Background="#24FFFFFF" CornerRadius="4" Margin="2,0"/>
-                                                                    <ControlTemplate.Triggers>
-                                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                                            <Setter TargetName="ThumbBd" Property="Background" Value="#3DFFFFFF"/>
-                                                                        </Trigger>
-                                                                    </ControlTemplate.Triggers>
-                                                                </ControlTemplate>
-                                                            </Thumb.Template>
-                                                        </Thumb>
-                                                    </Track.Thumb>
-                                                    <Track.IncreaseRepeatButton>
-                                                        <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Height="0"/>
-                                                    </Track.IncreaseRepeatButton>
-                                                </Track>
-                                            </Grid>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
+                            <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
                         </ListBox.Resources>
                         <ListBox.ItemContainerStyle>
                             <StaticResource ResourceKey="ListItemContainer"/>
@@ -906,6 +1035,9 @@
                                  ItemsSource="{Binding HistoryItems}"
                                  SelectionChanged="HistoryBox_SelectionChanged"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Resources>
+                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                            </ListBox.Resources>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Margin="11,10">
@@ -934,6 +1066,7 @@
                             <RowDefinition Height="Auto"/>  <!-- filter / search box -->
                             <RowDefinition Height="Auto"/>  <!-- breadcrumb (TV drill) -->
                             <RowDefinition Height="Auto"/>  <!-- status / empty state -->
+                            <RowDefinition Height="Auto"/>  <!-- view toggle toolbar -->
                             <RowDefinition Height="*"/>     <!-- results list -->
                         </Grid.RowDefinitions>
 
@@ -1020,62 +1153,54 @@
                                    TextWrapping="Wrap"
                                    Visibility="Collapsed"/>
 
-                        <!-- Results list -->
+                        <!-- View toggle (list vs. tiles) — right-aligned above the results -->
+                        <StackPanel x:Name="PlexViewToolbar"
+                                    Grid.Row="5"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Margin="20,0,20,8"
+                                    Visibility="Collapsed">
+                            <Button x:Name="PlexListViewBtn"
+                                    Style="{StaticResource IconButton}"
+                                    Width="34" Height="28"
+                                    FontFamily="Segoe UI Symbol" FontSize="14"
+                                    Content="&#x2261;"
+                                    ToolTip="List view"
+                                    Margin="0,0,6,0"
+                                    Click="PlexListView_Click"/>
+                            <Button x:Name="PlexTileViewBtn"
+                                    Style="{StaticResource IconButton}"
+                                    Width="34" Height="28"
+                                    FontFamily="Segoe UI Symbol" FontSize="14"
+                                    Content="&#x25A6;"
+                                    ToolTip="Tile view"
+                                    Margin="0,0,6,0"
+                                    Click="PlexTileView_Click"/>
+                            <Button x:Name="PlexFullscreenViewBtn"
+                                    Style="{StaticResource IconButton}"
+                                    Width="34" Height="28"
+                                    FontFamily="Segoe UI Symbol" FontSize="14"
+                                    Content="&#x26F6;"
+                                    ToolTip="Full-screen tiles (pauses playback)"
+                                    Click="PlexFullscreenView_Click"/>
+                        </StackPanel>
+
+                        <!-- Results list — ItemTemplate + ItemsPanel swapped by ApplyPlexViewMode() -->
                         <ListBox x:Name="PlexResultsBox"
-                                 Grid.Row="5"
+                                 Grid.Row="6"
                                  Background="Transparent"
                                  Foreground="#E7E9F1"
                                  BorderThickness="0"
                                  Padding="8,2,8,8"
                                  ItemContainerStyle="{StaticResource ListItemContainer}"
                                  ItemsSource="{Binding PlexItems}"
+                                 ItemTemplate="{StaticResource PlexListItemTemplate}"
+                                 ItemsPanel="{StaticResource PlexListPanel}"
                                  SelectionChanged="PlexResultsBox_SelectionChanged"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="11,9">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="{Binding Title}"
-                                                       TextWrapping="Wrap"
-                                                       FontSize="14"
-                                                       FontWeight="Medium"
-                                                       LineHeight="19"
-                                                       Foreground="#E7E9F1"/>
-                                            <TextBlock Text="{Binding Subtitle}"
-                                                       FontSize="12"
-                                                       Foreground="#848B9F"
-                                                       Margin="0,6,0,0"
-                                                       TextTrimming="CharacterEllipsis">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding Subtitle}" Value="">
-                                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                            <TextBlock Text="{Binding MetaLine}"
-                                                       FontSize="12"
-                                                       Foreground="#7D97FF"
-                                                       Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <!-- Drill-in chevron for shows/seasons -->
-                                        <TextBlock Grid.Column="1"
-                                                   Text="›"
-                                                   FontSize="20"
-                                                   Foreground="#565C6D"
-                                                   VerticalAlignment="Center"
-                                                   Margin="8,0,4,0"
-                                                   Visibility="{Binding IsContainer, Converter={StaticResource BoolToVisibility}}"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
+                            <ListBox.Resources>
+                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                            </ListBox.Resources>
                         </ListBox>
                     </Grid>
                     <!-- end PlexContent -->
@@ -1157,6 +1282,9 @@
                                  ItemsSource="{Binding PodcastItems}"
                                  SelectionChanged="PodcastResultsBox_SelectionChanged"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Resources>
+                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                            </ListBox.Resources>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Margin="11,9">

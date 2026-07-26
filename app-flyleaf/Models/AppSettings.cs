@@ -26,5 +26,12 @@ namespace VideoPlayer.Models
         /// <summary>Which browser yt-dlp reads cookies from when <see cref="UseBrowserCookies"/> is on.</summary>
         [JsonPropertyName("cookie_browser")]
         public string CookieBrowser { get; set; } = "edge";
+
+        /// <summary>
+        /// Plex results panel view: <c>true</c> = poster/tile grid, <c>false</c> = compact list.
+        /// Defaults to tiles. Remembered across sessions.
+        /// </summary>
+        [JsonPropertyName("plex_tile_view")]
+        public bool PlexTileView { get; set; } = true;
     }
 }

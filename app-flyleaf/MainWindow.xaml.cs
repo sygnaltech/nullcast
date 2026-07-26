@@ -100,6 +100,8 @@ namespace VideoPlayer
         private List<PlexItem> _plexCurrentItems = new(); // list at the current drill depth
         private readonly List<PlexDrillFrame> _plexDrill = new();
         private int _plexLoadToken;                        // stale-guard for async browse loads
+        private bool _plexFullscreen;                      // full-screen browse takeover active
+        private bool _plexResumeAfterFullscreen;           // was the player playing when we took over?
 
         // Segment pill colors (active vs inactive) — mirror the PlexSegment XAML style.
         private static readonly Brush SegActiveBg   = Frozen(Color.FromArgb(0x21, 0x7D, 0x97, 0xFF));
@@ -428,6 +430,7 @@ namespace VideoPlayer
 
             await LoadSettingsAsync();
             CookiesMenuItem.IsChecked = _settings.UseBrowserCookies;
+            ApplyPlexViewMode();   // restore the remembered Plex list/tile view
 
             await _history.LoadAsync();
             RefreshHistoryView();
@@ -568,6 +571,10 @@ namespace VideoPlayer
         private void SelectTab(SidebarTab tab)
         {
             _activeTab = tab;
+
+            // Leaving Plex? Drop the full-screen browse takeover (and resume playback).
+            if (_plexFullscreen && tab != SidebarTab.Plex)
+                ExitPlexFullscreen(resumeVideo: true, reapply: true);
 
             PlaylistContent.Visibility = tab == SidebarTab.Playlist ? Visibility.Visible : Visibility.Collapsed;
             HistoryContent.Visibility  = tab == SidebarTab.History  ? Visibility.Visible : Visibility.Collapsed;
@@ -736,12 +743,16 @@ namespace VideoPlayer
                 PlexLibraryBar.Visibility   = Visibility.Collapsed;
                 PlexCategoryCombo.Visibility = Visibility.Collapsed;
                 PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
+                if (PlexViewToolbar != null) PlexViewToolbar.Visibility = Visibility.Collapsed;
                 PlexStatusText.Text = "No Plex server configured. Open Services (⚙) to add one.";
                 PlexStatusText.Visibility = Visibility.Visible;
                 return;
             }
 
             PlexLibraryBar.Visibility = Visibility.Visible;
+            // The list/tile toggle stays available whenever there's something to look at.
+            if (PlexViewToolbar != null)
+                PlexViewToolbar.Visibility = PlexItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
             if (PlexItems.Count == 0)
             {
@@ -756,6 +767,111 @@ namespace VideoPlayer
             {
                 PlexStatusText.Visibility = Visibility.Collapsed;
             }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Plex view mode: compact list ⇄ poster tiles (remembered)
+        // ──────────────────────────────────────────────────────
+
+        private void PlexListView_Click(object sender, RoutedEventArgs e) => SetPlexViewMode(tiles: false);
+        private void PlexTileView_Click(object sender, RoutedEventArgs e) => SetPlexViewMode(tiles: true);
+        private void PlexFullscreenView_Click(object sender, RoutedEventArgs e) => TogglePlexFullscreen();
+
+        /// <summary>Pick the compact list or poster tiles (and leave full-screen browse if active).</summary>
+        private void SetPlexViewMode(bool tiles)
+        {
+            if (_plexFullscreen) ExitPlexFullscreen(resumeVideo: true, reapply: false);
+            if (_settings.PlexTileView != tiles)
+            {
+                _settings.PlexTileView = tiles;
+                SaveSettings();
+            }
+            ApplyPlexViewMode();
+        }
+
+        /// <summary>Swaps the results ListBox between the tile grid and the compact list, and
+        /// reflects the active mode on the toolbar buttons. Safe to call before data loads.
+        /// Full-screen browse always renders as tiles.</summary>
+        private void ApplyPlexViewMode()
+        {
+            if (PlexResultsBox == null) return;
+
+            bool tiles = _settings.PlexTileView || _plexFullscreen;
+            PlexResultsBox.ItemTemplate = (DataTemplate)FindResource(
+                tiles ? "PlexTileItemTemplate" : "PlexListItemTemplate");
+            PlexResultsBox.ItemsPanel = (ItemsPanelTemplate)FindResource(
+                tiles ? "PlexTilePanel" : "PlexListPanel");
+
+            // Highlight exactly one of the three toolbar buttons.
+            StylePlexViewButton(PlexListViewBtn,       !_settings.PlexTileView && !_plexFullscreen);
+            StylePlexViewButton(PlexTileViewBtn,        _settings.PlexTileView && !_plexFullscreen);
+            StylePlexViewButton(PlexFullscreenViewBtn,  _plexFullscreen);
+        }
+
+        private static void StylePlexViewButton(Button b, bool active)
+        {
+            if (b == null) return;
+            b.Foreground = active ? SegActiveFg : SegInactiveFg;
+            b.Background = active ? SegActiveBg : SegInactiveBg;
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Full-screen browse: the Plex panel takes over the video
+        // area so posters fill the window. Playback pauses while it's
+        // up and resumes when we collapse back down.
+        // ──────────────────────────────────────────────────────
+
+        private void TogglePlexFullscreen()
+        {
+            if (_plexFullscreen) ExitPlexFullscreen(resumeVideo: true, reapply: true);
+            else                 EnterPlexFullscreen();
+        }
+
+        private void EnterPlexFullscreen()
+        {
+            if (_plexFullscreen) return;
+            _plexFullscreen = true;
+
+            // Pause the video (remember whether it was actually playing).
+            _plexResumeAfterFullscreen = _player?.Status == Status.Playing;
+            if (_plexResumeAfterFullscreen)
+            {
+                if (_activePlex != null && _plex != null)
+                    _ = _plex.ReportTimelineAsync(_activePlex, "paused", _player.CurTime / 10000L);
+                _player.Pause();
+            }
+
+            // Expand the side panel across the (now-hidden) video column.
+            VideoColumn.Width     = new GridLength(0);
+            PanelColumn.Width     = new GridLength(1, GridUnitType.Star);
+            SidePanelColumn.Width = new GridLength(1, GridUnitType.Star);
+            SidePanel.Width       = double.NaN;   // stretch to fill the star column
+            PlaylistTab.Visibility = Visibility.Collapsed;
+
+            ApplyPlexViewMode();
+        }
+
+        private void ExitPlexFullscreen(bool resumeVideo, bool reapply)
+        {
+            if (!_plexFullscreen) return;
+            _plexFullscreen = false;
+
+            // Restore the split layout.
+            VideoColumn.Width     = new GridLength(1, GridUnitType.Star);
+            PanelColumn.Width     = GridLength.Auto;
+            SidePanelColumn.Width = GridLength.Auto;
+            SidePanel.Width       = 325;
+            PlaylistTab.Visibility = Visibility.Visible;
+
+            if (resumeVideo && _plexResumeAfterFullscreen && _player != null)
+            {
+                if (_activePlex != null && _plex != null)
+                    _ = _plex.ReportTimelineAsync(_activePlex, "playing", _player.CurTime / 10000L);
+                _player.Play();
+            }
+            _plexResumeAfterFullscreen = false;
+
+            if (reapply) ApplyPlexViewMode();
         }
 
         // ──────────────────────────────────────────────────────
