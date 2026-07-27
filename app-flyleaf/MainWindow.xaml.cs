@@ -151,7 +151,7 @@ namespace VideoPlayer
 
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             var versionText = $"v{v.Major}.{v.Minor}.{v.Build}";
-            Title = $"Video Player {versionText}";
+            Title = $"Nullcast {versionText}";
             VersionLabel.Text = versionText;
 
             OpenUrlCommand   = new RelayCommand(_ => OpenUrl_Click(null, null));
@@ -1393,7 +1393,7 @@ namespace VideoPlayer
                 _player.Stop();
 
                 _currentUrl = streamUrl;
-                Title = $"Video Player v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3)} - {item.Title}";
+                Title = $"Nullcast v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3)} - {item.Title}";
 
                 // Local history (Plex items keyed by a stable plex:// id, not the tokenized URL).
                 _history.Record($"plex://{item.RatingKey}", item.Title);
@@ -1876,8 +1876,8 @@ namespace VideoPlayer
         {
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
             Title = string.IsNullOrEmpty(mediaTitle)
-                ? $"Video Player v{v}"
-                : $"Video Player v{v} - {mediaTitle}";
+                ? $"Nullcast v{v}"
+                : $"Nullcast v{v} - {mediaTitle}";
         }
 
         private void PlayPause_Click(object sender, RoutedEventArgs e)

@@ -25,7 +25,7 @@ namespace VideoPlayer.Services
         {
             var c = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             c.DefaultRequestHeaders.Add("Accept", "application/json");
-            c.DefaultRequestHeaders.Add("X-Plex-Product", "Video Player");
+            c.DefaultRequestHeaders.Add("X-Plex-Product", "Nullcast");
             c.DefaultRequestHeaders.Add("X-Plex-Client-Identifier", "sygnal-video-player");
             return c;
         }

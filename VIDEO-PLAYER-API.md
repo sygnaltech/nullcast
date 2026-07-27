@@ -1,6 +1,6 @@
-# Video Player — Remote Control API
+# Nullcast — Remote Control API
 
-A local HTTP control surface for the Windows video player (`app-flyleaf/`). Other
+A local HTTP control surface for Nullcast, the Windows video player (`app-flyleaf/`). Other
 applications on the machine — voice agents, a control panel, automation scripts — use it
 to **control playback**, **tell the player what to play**, and **read / subscribe to**
 the current playback state.
@@ -34,7 +34,7 @@ turned off or reconfigured in `%AppData%\VideoPlayer\api.json` (see [Configurati
 
 ```sh
 curl http://127.0.0.1:47893/api/v1/ping
-# {"app":"video-player-win","version":"0.2.16","protocol":"v1","state":"idle"}
+# {"app":"nullcast","version":"0.2.20","protocol":"v1","state":"idle"}
 ```
 
 ---
@@ -61,7 +61,7 @@ learns the effect of a command in a single round-trip:
   "speed": 1.0,                // playback rate
   "fullscreen": false,
   "workspaceId": 12,           // active playlist workspace, or null
-  "app": { "name": "video-player-win", "version": "0.2.16", "protocol": "v1" },
+  "app": { "name": "nullcast", "version": "0.2.20", "protocol": "v1" },
   "ts": 1721890000000          // epoch ms when this snapshot was taken
 }
 ```

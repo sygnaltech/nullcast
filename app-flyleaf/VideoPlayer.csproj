@@ -8,7 +8,10 @@
     <RootNamespace>VideoPlayer</RootNamespace>
     <AssemblyName>VideoPlayer</AssemblyName>
     <ApplicationIcon>VideoPlayer.ico</ApplicationIcon>
-    <Version>0.2.19</Version>
+    <Product>Nullcast</Product>
+    <AssemblyTitle>Nullcast</AssemblyTitle>
+    <Description>Nullcast — a lightweight, client-side Windows video player.</Description>
+    <Version>0.2.20</Version>
   </PropertyGroup>
 
   <ItemGroup>

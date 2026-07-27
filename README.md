@@ -1,6 +1,6 @@
-# video-player-win
+# Nullcast
 
-A lightweight, client-side Windows video player built around the
+**Nullcast** is a lightweight, client-side Windows video player built around the
 [Sygnal Playlist / bookmarks service](https://playlist-api.sygnal.com). It
 plays local files, direct URLs, and YouTube videos, and syncs playlists,
 bookmarks, and playback position against your Playlist workspaces.

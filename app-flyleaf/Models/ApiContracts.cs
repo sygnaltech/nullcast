@@ -45,7 +45,7 @@ namespace VideoPlayer.Models
 
     public class AppInfo
     {
-        public string Name { get; set; } = "video-player-win";
+        public string Name { get; set; } = "nullcast";
         public string Version { get; set; } = "";
         public string Protocol { get; set; } = "v1";
     }
