@@ -329,7 +329,12 @@ namespace VideoPlayer
             _player.PlaybackStopped += (s, e) => Dispatcher.InvokeAsync(() =>
             {
                 PlayPauseButton.Content = "▶";
-                ProgressSlider.Value = 0;
+                // FlyleafLib raises this when the playback loop halts — which
+                // includes pausing. Only zero the bar on a genuine stop/end;
+                // when merely paused, keep the current position visible so the
+                // user can still see (and hover) where they are.
+                if (_player == null || _player.Status != Status.Paused)
+                    ProgressSlider.Value = 0;
             });
 
             // For split-stream sources, attach the parked audio URL as an external stream
