@@ -1,0 +1,159 @@
+---
+id: 0yiDWQIEPhpCkz5ES5LHdC
+version: 2
+title: Plex Integration — Technical Notes
+date: 2026-07-28
+description: How playback progress and watch state flow between the Nullcast client and the Plex server, and how "watched" category filtering is decided.
+tags: [plex, playback, watch-state]
+---
+
+<h1>Plex Integration — Technical Notes</h1>
+
+<p>
+  This note documents how playback progress and watch state move between the Nullcast
+  client and the Plex Media Server, and — specifically — <strong>who decides</strong> what
+  counts as "watched" when you request a category like <em>Never Watched</em>.
+</p>
+
+<h2>The short version</h2>
+
+<p>
+  <strong>Plex is the source of truth for all watch state, not the client.</strong> The
+  client emits playback <em>events</em> and reads back the <em>results</em>; the Plex server
+  owns the watched/unwatched decision, stores it in its own database, and executes category
+  filtering. If you played the same library in the official Plex app, the two would agree,
+  because both write to and read from the same server-side state.
+</p>
+
+<h2>1. Progress reporting (client → server)</h2>
+
+<p>
+  During playback the client continuously reports position to Plex's timeline endpoint. This
+  is the mechanism through which Plex learns what you have watched. There is
+  <strong>no explicit "mark watched"</strong> call — no <code>/:/scrobble</code> or
+  <code>/:/unscrobble</code> — the client only pushes timeline progress and lets the server
+  infer completion.
+</p>
+
+<p>Implemented in <code>ReportTimelineAsync</code>, <code>app-flyleaf/Services/PlexService.cs:388-406</code>:</p>
+
+<pre><code class="language-csharp">var url =
+    $"{_store.PlexBaseUrl}/:/timeline" +
+    $"?ratingKey={Uri.EscapeDataString(item.RatingKey)}" +
+    $"&key={key}" +
+    $"&state={Uri.EscapeDataString(state)}" +
+    $"&time={timeMs}" +
+    $"&duration={item.DurationMs}" +
+    $"&X-Plex-Token={Uri.EscapeDataString(token)}";
+await _http.GetAsync(url);</code></pre>
+
+<p>
+  <code>state</code> is one of <code>playing</code>, <code>paused</code>, or
+  <code>stopped</code>. The report fires from roughly ten call sites in
+  <code>app-flyleaf/MainWindow.xaml.cs</code>:
+</p>
+
+<table>
+  <thead>
+    <tr><th>When</th><th>State reported</th><th>Location</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Opening a video</td><td><code>playing</code> (at resume offset)</td><td><code>MainWindow.xaml.cs:1410</code></td></tr>
+    <tr><td>Heartbeat during playback (~1s)</td><td><code>playing</code></td><td><code>MainWindow.xaml.cs:1646</code></td></tr>
+    <tr><td>User pauses</td><td><code>paused</code></td><td><code>MainWindow.xaml.cs:1901</code></td></tr>
+    <tr><td>User resumes</td><td><code>playing</code></td><td><code>MainWindow.xaml.cs:1907</code></td></tr>
+    <tr><td>Video ends</td><td><code>stopped</code> (final duration)</td><td><code>MainWindow.xaml.cs:409</code></td></tr>
+    <tr><td>Switching items mid-play</td><td><code>stopped</code></td><td><code>MainWindow.xaml.cs:1383</code></td></tr>
+    <tr><td>Window closing while playing</td><td><code>stopped</code></td><td><code>MainWindow.xaml.cs:1968</code></td></tr>
+  </tbody>
+</table>
+
+<h2>2. Reading watch state (server → client)</h2>
+
+<p>
+  On each browse or metadata fetch the client reads Plex's watch-state fields back out of the
+  response and maps them onto its view model. Field definitions live in
+  <code>app-flyleaf/Models/PlexItem.cs:48-73</code>:
+</p>
+
+<table>
+  <thead>
+    <tr><th>Field</th><th>Meaning</th><th>Used for</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>viewOffset</code></td><td>Resume position (ms)</td><td>Resume badge, e.g. <samp>▶ 12:03</samp></td></tr>
+    <tr><td><code>viewCount</code></td><td>Times finished (server increments)</td><td>Watched vs. unwatched</td></tr>
+    <tr><td><code>lastViewedAt</code></td><td>Epoch of last view</td><td>"Recently Watched" sort/filter</td></tr>
+    <tr><td><code>viewedLeafCount</code></td><td>Episodes watched (shows)</td><td>Progress, e.g. <samp>3/62 watched</samp></td></tr>
+  </tbody>
+</table>
+
+<h2>3. Category filtering — who decides "Never Watched"</h2>
+
+<p>
+  <strong>The Plex server decides.</strong> Selecting <em>Never Watched</em> appends
+  <code>&amp;unwatched=1</code> to the library query; the server filters against its own
+  <code>viewCount</code> records and returns only unwatched items. The client never computes
+  watched-vs-unwatched itself.
+</p>
+
+<p><code>BrowseAsync</code>, <code>app-flyleaf/Services/PlexService.cs:303-309</code>:</p>
+
+<pre><code class="language-csharp">if (view == PlexBrowseView.NeverWatched)
+    extra += "&unwatched=1";
+
+var url = $"{_store.PlexBaseUrl}/library/sections/{Uri.EscapeDataString(sectionKey)}/all" +
+          $"?type={typeNum}&sort={sort}{extra}&includeGenres=1" +
+          $"&X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";</code></pre>
+
+<p>
+  The one exception is <em>Recently Watched</em>, which is filtered <strong>client-side</strong>:
+  the server returns items sorted by <code>lastViewedAt</code> and the client drops any with
+  <code>lastViewedAt &lt;= 0</code> (<code>app-flyleaf/Services/PlexService.cs:317</code>).
+  <em>Never Watched</em> is fully server-side.
+</p>
+
+<h2>Division of responsibility</h2>
+
+<table>
+  <thead>
+    <tr><th>Concern</th><th>Owner</th><th>How</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Progress tracking</td><td>Client</td><td>Pushes timeline heartbeat with <code>time</code>/<code>duration</code></td></tr>
+    <tr><td>The watched/unwatched <em>decision</em></td><td>Plex server</td><td>Threshold logic (~90% of duration) + its own DB; bumps <code>viewCount</code></td></tr>
+    <tr><td>Category filtering (<em>Never Watched</em>)</td><td>Plex server</td><td>Executes <code>unwatched=1</code> against its records</td></tr>
+    <tr><td>Resume position display</td><td>Client</td><td>Reads back <code>viewOffset</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Practical implication</h2>
+
+<p>
+  Because watched status depends entirely on Plex receiving progress reports, a video only
+  becomes "watched" once the server has seen a <code>stopped</code> report (or enough
+  heartbeats to cross its completion threshold). The client reports <code>stopped</code> on
+  graceful window close (<code>app-flyleaf/MainWindow.xaml.cs:1968</code>), which covers the
+  normal path. A hard kill mid-playback that skips the closing report can leave Plex with a
+  stale <code>viewOffset</code> and an un-incremented <code>viewCount</code> — the item stays
+  "in progress" rather than "watched."
+</p>
+
+<h2>Endpoints used</h2>
+
+<table>
+  <thead>
+    <tr><th>Endpoint</th><th>Purpose</th><th>Location</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>/:/timeline</code></td><td>Report playback progress</td><td><code>PlexService.cs:396</code></td></tr>
+    <tr><td><code>/library/sections/{id}/all</code></td><td>Browse library (with <code>unwatched=1</code>)</td><td><code>PlexService.cs:307</code></td></tr>
+    <tr><td><code>/library/metadata/{id}</code></td><td>Fetch single item</td><td><code>PlexService.cs:187, 206</code></td></tr>
+    <tr><td><code>/library/metadata/{id}/children</code></td><td>Drill down (show → season → episode)</td><td><code>PlexService.cs:337</code></td></tr>
+    <tr><td><code>/library/sections</code></td><td>List video libraries</td><td><code>PlexService.cs:233</code></td></tr>
+    <tr><td><code>/hubs/search</code></td><td>Search</td><td><code>PlexService.cs:137</code></td></tr>
+    <tr><td><code>/identity</code></td><td>Connection test</td><td><code>PlexService.cs:89</code></td></tr>
+  </tbody>
+</table>
+
+<p><small>Authentication on every call is the <code>X-Plex-Token</code> query parameter, decrypted on demand via <code>_store.GetPlexToken()</code>.</small></p>
