@@ -86,6 +86,7 @@ namespace VideoPlayer
         private PlexService _plex;
         private PlexItem    _activePlex;      // set while a Plex item is playing; drives timeline reports
         private int         _plexTimelineTick;
+        private int         _avSyncDiagTick;      // throttles A/V-sync decode diagnostics
         private DispatcherTimer _plexSearchDebounce;
         private SidebarTab _activeTab = SidebarTab.Playlist;
 
@@ -284,6 +285,16 @@ namespace VideoPlayer
         private void InitializeFlyleaf()
         {
             var config = new Config();
+
+            // A/V-sync diagnostics: FramesDisplayed/FramesDropped/FPSCurrent only
+            // populate when Stats is on (Engine.UIRefresh is already enabled). This
+            // lets us see whether the video decoder is falling behind the audio
+            // clock (the likely cause of audio-runs-ahead desync).
+            config.Player.Stats = true;
+
+            App.Log($"[AVSync] Decode config: VideoAcceleration={config.Video.VideoAcceleration} " +
+                    $"AllowDropFrames={config.Decoder.AllowDropFrames} VideoThreads={config.Decoder.VideoThreads} " +
+                    $"DemuxerBufferDuration={config.Demuxer.BufferDuration / 10000}ms");
 
             _player = new Player(config);
 
@@ -1615,6 +1626,23 @@ namespace VideoPlayer
             {
                 ProgressSlider.Value = (time * 100.0) / length;
                 TimeDisplay.Text     = $"{FormatTime((long)time)} / {FormatTime((long)length)}";
+            }
+
+            // A/V-sync diagnostics: every ~5s log whether the video decoder is
+            // keeping up. If FramesDropped climbs and FPSCurrent sits below FPS,
+            // video is falling behind the audio clock (audio-runs-ahead desync).
+            // BufferedDuration near-zero points at a starved demuxer/network instead.
+            _avSyncDiagTick++;
+            if (_avSyncDiagTick >= 10)
+            {
+                _avSyncDiagTick = 0;
+                var v = _player.Video;
+                App.Log($"[AVSync] t={FormatTime((long)time)} " +
+                        $"fps={v.FPS:F1}/cur={v.FPSCurrent:F1} " +
+                        $"displayed={v.FramesDisplayed} dropped={v.FramesDropped} " +
+                        $"buffered={_player.BufferedDuration / 10000}ms " +
+                        $"bitrate={v.BitRate / 1000.0:F0}kbps" +
+                        (_activePlex != null ? " src=plex" : ""));
             }
 
             // Update sidebar progress bar live
