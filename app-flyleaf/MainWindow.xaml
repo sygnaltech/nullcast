@@ -1594,10 +1594,213 @@
                StaysOpen="True"
                Focusable="False"
                PopupAnimation="Fade"/>
+
+        <!-- ══════════════════════════════════════════════════════
+             Ctrl+K global search palette. A top-level Popup (like the
+             controls overlay above) so it paints over the Flyleaf D3D
+             surface. The inner Grid is sized to RootGrid so the dim
+             scrim covers the whole window; the card is centered on top.
+             ══════════════════════════════════════════════════════ -->
+        <Popup x:Name="SearchPopup"
+               PlacementTarget="{Binding ElementName=RootGrid}"
+               Placement="Center"
+               AllowsTransparency="True"
+               StaysOpen="False"
+               Focusable="True"
+               PopupAnimation="Fade"
+               Closed="SearchPopup_Closed">
+            <Grid Width="{Binding ActualWidth, ElementName=RootGrid}"
+                  Height="{Binding ActualHeight, ElementName=RootGrid}">
+                <!-- Dim scrim: click anywhere outside the card to dismiss -->
+                <Border x:Name="SearchScrim" Background="#99080A12"
+                        MouseDown="SearchScrim_MouseDown"/>
+
+                <!-- Palette card -->
+                <Border Width="720" MaxHeight="600"
+                        VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Margin="0,-40,0,0"
+                        Background="#171A28" CornerRadius="14"
+                        BorderBrush="#1AFFFFFF" BorderThickness="1">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#000000" BlurRadius="40" ShadowDepth="0" Opacity="0.55"/>
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Search input -->
+                        <Grid Grid.Row="0" Margin="18,16,18,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="🔍" FontSize="16" Opacity="0.5"
+                                       VerticalAlignment="Center" Margin="2,0,12,0"/>
+                            <Grid Grid.Column="1">
+                                <TextBox x:Name="SearchBox"
+                                         VerticalContentAlignment="Center"
+                                         FontSize="17"
+                                         Background="Transparent"
+                                         Foreground="#EEF1FB"
+                                         CaretBrush="#7D97FF"
+                                         BorderThickness="0"
+                                         TextChanged="SearchBox_TextChanged"
+                                         PreviewKeyDown="SearchBox_PreviewKeyDown"/>
+                                <TextBlock Text="Search playlists, Plex…"
+                                           Foreground="#565C6D"
+                                           FontSize="17"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text.Length, ElementName=SearchBox}" Value="0">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                            <Border Grid.Column="2" Background="#0FFFFFFF" CornerRadius="4"
+                                    Padding="7,3" VerticalAlignment="Center">
+                                <TextBlock Text="Esc" FontSize="11" Foreground="#848B9F"/>
+                            </Border>
+                        </Grid>
+
+                        <!-- Divider under the input -->
+                        <Border Grid.Row="1" Height="1" Background="#0FFFFFFF"/>
+
+                        <!-- Source tabs -->
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="14,10,14,4">
+                            <StackPanel.Resources>
+                                <!-- Underline "pill" tab: Tag carries the filter key -->
+                                <Style x:Key="SearchTabStyle" TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#848B9F"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="FontWeight" Value="Medium"/>
+                                    <Setter Property="Padding" Value="12,7"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#12FFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </StackPanel.Resources>
+                            <Button x:Name="SearchTabAll"       Tag="All"       Content="All"       Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
+                            <Button x:Name="SearchTabPlaylists" Tag="Playlist"  Content="Playlists" Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
+                            <Button x:Name="SearchTabPlex"      Tag="Plex"      Content="Plex"      Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
+                        </StackPanel>
+
+                        <!-- Results / empty-state -->
+                        <Grid Grid.Row="3" Margin="0,2,0,8">
+                            <TextBlock x:Name="SearchStatusText"
+                                       Text="Type to search your playlists and Plex library."
+                                       Foreground="#565C6D" FontSize="13"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="24" TextAlignment="Center" TextWrapping="Wrap"/>
+                            <ListBox x:Name="SearchResultsBox"
+                                     Background="Transparent"
+                                     Foreground="#E7E9F1"
+                                     BorderThickness="0"
+                                     Padding="8,0,8,6"
+                                     ItemContainerStyle="{StaticResource ListItemContainer}"
+                                     PreviewMouseLeftButtonUp="SearchResult_Click"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.Resources>
+                                    <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                                </ListBox.Resources>
+                                <ListBox.GroupStyle>
+                                    <GroupStyle>
+                                        <GroupStyle.HeaderTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="11,12,11,4">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="#848B9F"/>
+                                                    <TextBlock Text="{Binding ItemCount}"
+                                                               FontSize="11" Foreground="#565C6D"
+                                                               Margin="8,0,0,0"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GroupStyle.HeaderTemplate>
+                                    </GroupStyle>
+                                </ListBox.GroupStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="11,9">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <!-- Poster (Plex only; hidden otherwise) -->
+                                            <Border Grid.Column="0" Width="36" Height="54" CornerRadius="4"
+                                                    Margin="0,0,11,0" Background="#22000000" ClipToBounds="True"
+                                                    VerticalAlignment="Top"
+                                                    Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
+                                                <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}"
+                                                           TextWrapping="Wrap" FontSize="14" FontWeight="Medium"
+                                                           LineHeight="19" Foreground="#E7E9F1"
+                                                           TextTrimming="CharacterEllipsis" MaxHeight="40"/>
+                                                <TextBlock Text="{Binding Subtitle}"
+                                                           FontSize="12" Foreground="#848B9F" Margin="0,4,0,0"
+                                                           TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Subtitle}" Value="">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Subtitle}" Value="{x:Null}">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <!-- Source badge pill -->
+                                            <Border Grid.Column="2" Background="#14FFFFFF" CornerRadius="4"
+                                                    Padding="7,3" VerticalAlignment="Center" Margin="8,0,2,0">
+                                                <TextBlock Text="{Binding SourceBadge}" FontSize="10" Foreground="#B7BCCB"/>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Popup>
     </Grid>
 
     <Window.InputBindings>
         <KeyBinding Key="O" Modifiers="Ctrl" Command="{Binding OpenUrlCommand}"/>
+        <KeyBinding Key="K" Modifiers="Ctrl" Command="{Binding SearchCommand}"/>
         <KeyBinding Key="Space" Command="{Binding PlayPauseCommand}"/>
     </Window.InputBindings>
 </Window>

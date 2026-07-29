@@ -137,6 +137,7 @@ namespace VideoPlayer
 
         public ICommand OpenUrlCommand  { get; }
         public ICommand PlayPauseCommand { get; }
+        public ICommand SearchCommand   { get; }
 
         public MainWindow()
         {
@@ -157,6 +158,7 @@ namespace VideoPlayer
 
             OpenUrlCommand   = new RelayCommand(_ => OpenUrl_Click(null, null));
             PlayPauseCommand = new RelayCommand(_ => PlayPause_Click(null, null));
+            SearchCommand    = new RelayCommand(_ => ToggleSearchPalette());
 
             InitializeFlyleaf();
             SetupTimer();

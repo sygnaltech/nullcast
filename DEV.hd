@@ -28,3 +28,13 @@ dotnet run --project app-flyleaf -c Release     # Release
 <p></p>
 
 <p></p>
+
+```
+dotnet build app-flyleaf/VideoPlayer.csproj
+```
+
+<p></p>
+
+<p></p>
+
+<p></p>
