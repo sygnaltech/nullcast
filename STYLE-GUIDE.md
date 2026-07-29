@@ -103,6 +103,11 @@ The Plex tab demonstrates the list conventions and the dual **list / tile** view
 - `PlexTileItemTemplate` — poster tile (2:3 art, placeholder when absent), title, meta line,
   and wrapped genre chips (`PlexGenreChip`). Tile width (134) is tuned so **two** tiles fit the
   325px sidebar with the 9px scrollbar present, and more columns appear as the panel widens.
+- **Episode-number badge** — inside a season, episodes carry a compact `E{n}` pill
+  (`#CC0F1118` fill, `#9DB0FF` text) overlaid on the **bottom-left** of the poster in both the
+  list and tile templates, so ordering reads at a glance. Bound to `PlexItem.HasEpisodeBadge` /
+  `EpisodeBadge`; the list row's leading-art column collapses via `HasLeadArt` when there's
+  neither a poster nor a badge.
 - Panels: `PlexListPanel` (`VirtualizingStackPanel`) and `PlexTilePanel` (`WrapPanel`).
 - The view toggle is a three-button `IconButton` group above the list — list, tiles, and
   **full-screen tiles**. `ApplyPlexViewMode()` swaps `ItemTemplate` + `ItemsPanel` and highlights
@@ -114,3 +119,14 @@ The Plex tab demonstrates the list conventions and the dual **list / tile** view
 
 Posters come from Plex's photo transcoder (`PlexService.ResolveThumbUrl`) so artwork is
 downloaded pre-sized rather than at full resolution.
+
+### Up-next auto-play card
+
+At the very end of a TV episode (`Status.Ended`), if the next episode in the same show is
+queued and auto-play is enabled, the `NextEpisodeOverlay` card appears **bottom-right** of the
+video: a small raised panel (`#F00F1118`, 12px radius, soft drop shadow) with an "UP NEXT"
+caption, the next title/subtitle, a **circular countdown** (indigo-stroked `Ellipse` over an
+`AccentTint` fill, click to play now), and a `TextButton` **Cancel**. A `DispatcherTimer` counts
+`3 → 0` then auto-advances. It's dismissed by Cancel, by starting any other playback
+(`Status.Playing` clears it), or by toggling off File ▸ **Auto-play next episode**
+(`AppSettings.AutoPlayNextEpisode`).

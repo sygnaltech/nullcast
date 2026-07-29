@@ -152,6 +152,21 @@ namespace VideoPlayer.Models
         public string? ThumbUrl    { get; set; }
         public bool    HasThumb => !string.IsNullOrEmpty(ThumbUrl);
 
+        // Season / episode ordering (0 when unknown). Sourced from Plex's parentIndex/index.
+        public int    SeasonIndex  { get; set; }
+        public int    EpisodeIndex { get; set; }
+        /// <summary>The show a season/episode belongs to (Plex grandparentTitle). Used to keep
+        /// auto-play-next scoped to a single show.</summary>
+        public string ShowTitle    { get; set; } = "";
+
+        public bool IsEpisode => Kind == "episode";
+        /// <summary>True when this episode has a usable episode number to badge.</summary>
+        public bool HasEpisodeBadge => IsEpisode && EpisodeIndex > 0;
+        /// <summary>Compact ordering badge overlaid on the poster, e.g. "E5".</summary>
+        public string EpisodeBadge => HasEpisodeBadge ? $"E{EpisodeIndex}" : "";
+        /// <summary>Whether the leading art column has anything to show (poster or episode badge).</summary>
+        public bool HasLeadArt => HasThumb || HasEpisodeBadge;
+
         /// <summary>Category tags (Plex genres) for this item, in server order.</summary>
         public List<string> Genres { get; set; } = new();
         public bool    HasTags => Genres.Count > 0;
@@ -244,6 +259,9 @@ namespace VideoPlayer.Models
                 TypeLabel       = typeLabel,
                 Kind            = type,
                 RatingKey       = m.RatingKey ?? "",
+                SeasonIndex     = m.ParentIndex ?? 0,
+                EpisodeIndex    = m.Index ?? 0,
+                ShowTitle       = m.GrandparentTitle ?? "",
                 ThumbPath       = m.Thumb,
                 Genres          = m.Genre?.Select(g => g.Tag).Where(t => !string.IsNullOrEmpty(t)).Select(t => t!).ToList()
                                   ?? new List<string>(),

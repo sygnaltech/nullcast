@@ -109,6 +109,14 @@ namespace VideoPlayer
         private int _plexRenderToken;                      // stale-guard for the batched list fill
         private ScrollViewer _plexScroller;                // cached results ScrollViewer (scroll-to-top)
 
+        // Auto-play-next (TV): the ordered episode list we're walking and our position in it,
+        // plus the end-of-episode countdown state.
+        private List<PlexItem> _plexPlayQueue = new();
+        private int _plexPlayIndex = -1;
+        private System.Windows.Threading.DispatcherTimer _nextEpTimer;
+        private int _nextEpCountdown;
+        private PlexItem _nextEpTarget;
+
         // Segment pill colors (active vs inactive) — mirror the PlexSegment XAML style.
         private static readonly Brush SegActiveBg   = Frozen(Color.FromArgb(0x21, 0x7D, 0x97, 0xFF));
         private static readonly Brush SegInactiveBg = Frozen(Color.FromArgb(0x08, 0xFF, 0xFF, 0xFF));
@@ -381,6 +389,8 @@ namespace VideoPlayer
                             case Status.Playing:
                                 PlayPauseButton.Content = "⏸";
                                 StatusText.Visibility = Visibility.Collapsed;
+                                // Any fresh playback supersedes a pending up-next countdown.
+                                CancelNextEpisodeCountdown();
 
                                 if (_seekOnPlay.HasValue)
                                 {
@@ -420,6 +430,13 @@ namespace VideoPlayer
                                 {
                                     // Report final position so Plex marks it watched/resumable.
                                     _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.Duration / 10000L);
+
+                                    // Offer to auto-advance to the next episode in this show.
+                                    if (_settings.AutoPlayNextEpisode)
+                                    {
+                                        var next = GetNextEpisode();
+                                        if (next != null) StartNextEpisodeCountdown(next);
+                                    }
                                 }
                                 if (_activeMuid != null && _api != null)
                                 {
@@ -457,6 +474,7 @@ namespace VideoPlayer
 
             await LoadSettingsAsync();
             CookiesMenuItem.IsChecked = _settings.UseBrowserCookies;
+            AutoPlayNextMenuItem.IsChecked = _settings.AutoPlayNextEpisode;
             ApplyPlexViewMode();   // restore the remembered Plex list/tile view
 
             await _history.LoadAsync();
@@ -1400,6 +1418,30 @@ namespace VideoPlayer
             _activePlex = item;
             _plexTimelineTick = 0;
 
+            // A new item is starting — drop any pending end-of-episode countdown, then work out
+            // the queue we're walking so we can auto-advance when this one ends. Prefer an
+            // already-established queue (so auto-advance keeps going even if the user has browsed
+            // elsewhere); otherwise seed a fresh one from the current drill list.
+            CancelNextEpisodeCountdown();
+            if (item.IsEpisode)
+            {
+                int qIdx = _plexPlayQueue.FindIndex(p => p.RatingKey == item.RatingKey);
+                if (qIdx >= 0)
+                {
+                    _plexPlayIndex = qIdx;
+                }
+                else
+                {
+                    int idx = _plexCurrentItems.FindIndex(p => p.RatingKey == item.RatingKey);
+                    if (idx >= 0) { _plexPlayQueue = new List<PlexItem>(_plexCurrentItems); _plexPlayIndex = idx; }
+                    else          { _plexPlayQueue = new(); _plexPlayIndex = -1; }
+                }
+            }
+            else
+            {
+                _plexPlayQueue = new(); _plexPlayIndex = -1;
+            }
+
             // Resume where Plex left off, using the shared seek-on-play mechanism.
             _seekOnPlay = item.HasResume ? item.ViewOffsetMs : null;
 
@@ -1429,6 +1471,83 @@ namespace VideoPlayer
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        // ──────────────────────────────────────────────────────
+        // Auto-play next episode (TV)
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The episode that follows the one currently playing, or null when there isn't a sensible
+        /// one. Auto-advance stays within a single show and only to playable episodes.
+        /// </summary>
+        private PlexItem GetNextEpisode()
+        {
+            if (_plexPlayIndex < 0 || _plexPlayIndex + 1 >= _plexPlayQueue.Count) return null;
+
+            var cur  = _activePlex;
+            var next = _plexPlayQueue[_plexPlayIndex + 1];
+            if (cur == null || next == null || !next.IsEpisode || !next.IsPlayable) return null;
+
+            // Don't jump across shows (guards flat mixed lists like "Recently Added").
+            if (!string.IsNullOrEmpty(cur.ShowTitle) && !string.IsNullOrEmpty(next.ShowTitle)
+                && !string.Equals(cur.ShowTitle, next.ShowTitle, StringComparison.Ordinal))
+                return null;
+
+            return next;
+        }
+
+        /// <summary>Shows the "Up next" card and starts a 3-second countdown to the given episode.</summary>
+        private void StartNextEpisodeCountdown(PlexItem next)
+        {
+            _nextEpTarget    = next;
+            _nextEpCountdown = 3;
+
+            NextEpisodeTitle.Text = next.Title;
+            NextEpisodeSub.Text   = next.HasEpisodeBadge
+                ? $"{next.ShowTitle} · {next.EpisodeBadge}".Trim(' ', '·')
+                : next.ShowTitle;
+            NextEpisodeCount.Text        = _nextEpCountdown.ToString();
+            NextEpisodeOverlay.Visibility = Visibility.Visible;
+
+            _nextEpTimer ??= new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1),
+            };
+            _nextEpTimer.Tick -= NextEpisodeTick;
+            _nextEpTimer.Tick += NextEpisodeTick;
+            _nextEpTimer.Start();
+        }
+
+        private void NextEpisodeTick(object sender, EventArgs e)
+        {
+            _nextEpCountdown--;
+            if (_nextEpCountdown <= 0)
+            {
+                PlayNextEpisodeNow();
+                return;
+            }
+            NextEpisodeCount.Text = _nextEpCountdown.ToString();
+        }
+
+        /// <summary>Skip the wait and play the queued next episode immediately.</summary>
+        private void PlayNextEpisodeNow()
+        {
+            var next = _nextEpTarget;
+            CancelNextEpisodeCountdown();
+            if (next != null) PlayPlexItem(next);
+        }
+
+        /// <summary>Hide the card and stop the countdown (also called whenever new playback starts).</summary>
+        private void CancelNextEpisodeCountdown()
+        {
+            _nextEpTimer?.Stop();
+            _nextEpTarget = null;
+            if (NextEpisodeOverlay != null)
+                NextEpisodeOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void NextEpisodeNow_Click(object sender, RoutedEventArgs e)    => PlayNextEpisodeNow();
+        private void NextEpisodeCancel_Click(object sender, RoutedEventArgs e) => CancelNextEpisodeCountdown();
 
         // ──────────────────────────────────────────────────────
         // Podcasts (Apple Podcasts search → episode list → audio playback)
@@ -1704,6 +1823,13 @@ namespace VideoPlayer
         private void ToggleBrowserCookies_Click(object sender, RoutedEventArgs e)
         {
             _settings.UseBrowserCookies = CookiesMenuItem.IsChecked;
+            SaveSettings();
+        }
+
+        private void ToggleAutoPlayNext_Click(object sender, RoutedEventArgs e)
+        {
+            _settings.AutoPlayNextEpisode = AutoPlayNextMenuItem.IsChecked;
+            if (!_settings.AutoPlayNextEpisode) CancelNextEpisodeCountdown();
             SaveSettings();
         }
 

@@ -33,5 +33,13 @@ namespace VideoPlayer.Models
         /// </summary>
         [JsonPropertyName("plex_tile_view")]
         public bool PlexTileView { get; set; } = true;
+
+        /// <summary>
+        /// When true, reaching the very end of a TV episode shows a short cancelable countdown
+        /// and then automatically plays the next episode in the same show. On by default;
+        /// toggled from File ▸ "Auto-play next episode". Remembered across sessions.
+        /// </summary>
+        [JsonPropertyName("autoplay_next_episode")]
+        public bool AutoPlayNextEpisode { get; set; } = true;
     }
 }

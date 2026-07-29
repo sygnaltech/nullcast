@@ -564,14 +564,23 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- Small poster (hidden when the item has no artwork) -->
-                <Border Grid.Column="0" Width="36" Height="54" CornerRadius="4"
-                        Margin="0,0,11,0" Background="#22000000" ClipToBounds="True"
-                        VerticalAlignment="Top"
-                        Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
-                    <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
-                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                </Border>
+                <!-- Leading art: small poster with an episode-number badge overlaid bottom-left.
+                     The whole column collapses when there's neither a poster nor a badge. -->
+                <Grid Grid.Column="0" Width="36" Height="54" Margin="0,0,11,0"
+                      VerticalAlignment="Top"
+                      Visibility="{Binding HasLeadArt, Converter={StaticResource BoolToVisibility}}">
+                    <Border CornerRadius="4" Background="#22000000" ClipToBounds="True"
+                            Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
+                        <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                    </Border>
+                    <Border Background="#CC0F1118" CornerRadius="3" Padding="4,1"
+                            HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2"
+                            Visibility="{Binding HasEpisodeBadge, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding EpisodeBadge}" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="#9DB0FF"/>
+                    </Border>
+                </Grid>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Title}"
                                TextWrapping="Wrap" FontSize="14" FontWeight="Medium"
@@ -629,6 +638,13 @@
                             <TextBlock Text="›" FontSize="15" Foreground="#E7E9F1"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Margin="0,-2,0,0"/>
+                        </Border>
+                        <!-- Episode-number badge (bottom-left) -->
+                        <Border Background="#CC0F1118" CornerRadius="4" Padding="6,2"
+                                HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6"
+                                Visibility="{Binding HasEpisodeBadge, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding EpisodeBadge}" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="#9DB0FF"/>
                         </Border>
                     </Grid>
                 </Border>
@@ -754,6 +770,10 @@
                                   Header="Use _Edge cookies for private videos"
                                   IsCheckable="True"
                                   Click="ToggleBrowserCookies_Click"/>
+                        <MenuItem x:Name="AutoPlayNextMenuItem"
+                                  Header="_Auto-play next episode"
+                                  IsCheckable="True"
+                                  Click="ToggleAutoPlayNext_Click"/>
                         <Separator/>
                         <MenuItem Header="E_xit" Click="Exit_Click"/>
                     </MenuItem>
@@ -837,6 +857,47 @@
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            IsHitTestVisible="False"/>
+
+                <!-- Up-next auto-play card (bottom-right). Shown at the very end of a TV episode
+                     when another follows; counts down then auto-advances, cancelable. -->
+                <Border x:Name="NextEpisodeOverlay" Visibility="Collapsed"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,28,28"
+                        Background="#F00F1118" BorderBrush="#1AFFFFFF" BorderThickness="1"
+                        CornerRadius="12" Padding="16,14" MaxWidth="360">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#000000" BlurRadius="24" ShadowDepth="0" Opacity="0.55"/>
+                    </Border.Effect>
+                    <StackPanel>
+                        <TextBlock Text="UP NEXT" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="#848B9F" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="NextEpisodeTitle" FontSize="14" FontWeight="Medium"
+                                   Foreground="#E7E9F1" TextTrimming="CharacterEllipsis"
+                                   MaxWidth="320" TextWrapping="NoWrap"/>
+                        <TextBlock x:Name="NextEpisodeSub" FontSize="12"
+                                   Foreground="#848B9F" Margin="0,2,0,0"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <!-- Circled countdown; click to play now -->
+                            <Grid Width="44" Height="44" Cursor="Hand">
+                                <Ellipse Stroke="#7D97FF" StrokeThickness="2" Fill="#217D97FF"/>
+                                <TextBlock x:Name="NextEpisodeCount" Text="3"
+                                           FontSize="18" FontWeight="SemiBold" Foreground="#E7E9F1"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Button Click="NextEpisodeNow_Click" ToolTip="Play now" Cursor="Hand">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="Transparent"/>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </Grid>
+                            <TextBlock Text="Starting next episode…" FontSize="12" Foreground="#848B9F"
+                                       VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            <Button Content="Cancel" Click="NextEpisodeCancel_Click"
+                                    Style="{StaticResource TextButton}" FontSize="12"
+                                    VerticalAlignment="Center" Margin="14,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </Grid>
 
             <!-- Playlist column: content panel + collapse tab -->
