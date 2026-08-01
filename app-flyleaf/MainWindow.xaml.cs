@@ -1950,11 +1950,18 @@ namespace VideoPlayer
             return (title, videoUrl, audioUrl);
         }
 
-        private async Task<string> RunYtDlp(string arguments, string url)
+        /// <param name="cookieOverride">
+        /// null → follow the global "Use browser cookies" setting (default).
+        /// false → never send cookies (e.g. public YouTube-Music search, which doesn't need them
+        ///         and would otherwise fail when the browser holds a lock on its cookie DB).
+        /// true → send cookies if a browser is configured, regardless of the global toggle.
+        /// </param>
+        private async Task<string> RunYtDlp(string arguments, string url, bool? cookieOverride = null)
         {
             // When enabled, borrow the user's browser session so private / logged-in content
             // (e.g. a friends-only Facebook video) can be resolved.
-            var cookies = _settings.UseBrowserCookies && !string.IsNullOrWhiteSpace(_settings.CookieBrowser)
+            var useCookies = cookieOverride ?? _settings.UseBrowserCookies;
+            var cookies = useCookies && !string.IsNullOrWhiteSpace(_settings.CookieBrowser)
                 ? $"--cookies-from-browser {_settings.CookieBrowser} "
                 : "";
 

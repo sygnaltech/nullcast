@@ -22,11 +22,14 @@ namespace VideoPlayer.Services
     /// </summary>
     public class YtMusicService
     {
-        /// <summary>Runs yt-dlp: (arguments, url) → stdout. Applies cookies per app settings.</summary>
-        private readonly Func<string, string, Task<string>> _runYtDlp;
+        /// <summary>Runs yt-dlp: (arguments, url, useCookies) → stdout.</summary>
+        private readonly Func<string, string, bool, Task<string>> _runYtDlp;
 
-        public YtMusicService(Func<string, string, Task<string>> runYtDlp)
+        public YtMusicService(Func<string, string, bool, Task<string>> runYtDlp)
             => _runYtDlp = runYtDlp;
+
+        // How many search results to pull.
+        private const int SearchLimit = 25;
 
         /// <summary>The special YouTube Music playlist id for the user's liked songs.</summary>
         public const string LikedMusicId = "LM";
@@ -35,16 +38,25 @@ namespace VideoPlayer.Services
         // Search
         // ──────────────────────────────────────────────────────
 
-        /// <summary>Searches the YouTube Music catalog and returns track rows. Never throws.</summary>
+        /// <summary>
+        /// Searches for songs and returns playable track rows. Never throws.
+        ///
+        /// Uses yt-dlp's <c>ytsearch</c> (regular YouTube search) rather than the
+        /// <c>music.youtube.com/search</c> hub: in flat mode that hub returns navigation
+        /// browse-ids (albums/artists) with no titles and non-playable ids, whereas
+        /// <c>ytsearch</c> returns real videos with title/artist/duration/videoId. No cookies —
+        /// search never needs them (and forcing them fails while the browser locks its cookie DB).
+        /// A proper YT-Music song-filtered search is a Phase-2 InnerTube item.
+        /// </summary>
         public async Task<List<YtMusicItem>> SearchTracksAsync(string query)
         {
             var items = new List<YtMusicItem>();
             if (string.IsNullOrWhiteSpace(query)) return items;
 
-            var url = "https://music.youtube.com/search?q=" + Uri.EscapeDataString(query.Trim());
+            var target = $"ytsearch{SearchLimit}:{query.Trim()}";
             try
             {
-                var json = await _runYtDlp("--flat-playlist -J --no-warnings", url);
+                var json = await _runYtDlp("--flat-playlist -J --no-warnings", target, false);
                 ParseEntries(json, items, YtMusicKind.Track);
             }
             catch (Exception ex)
@@ -58,21 +70,45 @@ namespace VideoPlayer.Services
         // Playlist tracks
         // ──────────────────────────────────────────────────────
 
-        /// <summary>Lists a playlist's tracks in order (cookies required for private/Liked). Never throws.</summary>
+        /// <summary>
+        /// Lists a playlist's tracks in order. Tries public (no cookies) first so it always works
+        /// for public playlists even while the browser holds a cookie-DB lock; if that yields
+        /// nothing (e.g. a private list or Liked Music), retries once with cookies. Never throws.
+        /// </summary>
         public async Task<List<YtMusicItem>> GetPlaylistTracksAsync(string playlistId)
         {
             var items = new List<YtMusicItem>();
             if (string.IsNullOrWhiteSpace(playlistId)) return items;
 
             var url = $"https://music.youtube.com/playlist?list={Uri.EscapeDataString(playlistId)}";
+
+            // Liked Music is inherently private — go straight to the cookie attempt.
+            bool privateOnly = playlistId == LikedMusicId;
+
+            if (!privateOnly)
+            {
+                try
+                {
+                    var json = await _runYtDlp("--flat-playlist -J --no-warnings", url, false);
+                    ParseEntries(json, items, YtMusicKind.Track);
+                }
+                catch (Exception ex)
+                {
+                    App.Log($"[YTMusic] Playlist load (public) failed ({playlistId}): {ex.Message}");
+                }
+                if (items.Count > 0) return items;
+            }
+
+            // Private / Liked → needs the user's session cookies (may fail if the browser has the
+            // cookie DB locked; the caller surfaces a "close the browser" hint on empty).
             try
             {
-                var json = await _runYtDlp("--flat-playlist -J --no-warnings", url);
+                var json = await _runYtDlp("--flat-playlist -J --no-warnings", url, true);
                 ParseEntries(json, items, YtMusicKind.Track);
             }
             catch (Exception ex)
             {
-                App.Log($"[YTMusic] Playlist load failed ({playlistId}): {ex.Message}");
+                App.Log($"[YTMusic] Playlist load (cookies) failed ({playlistId}): {ex.Message}");
             }
             return items;
         }
@@ -95,7 +131,7 @@ namespace VideoPlayer.Services
             {
                 // --playlist-items 0 asks for metadata only (no entry expansion) — fast + cheap.
                 var url  = $"https://music.youtube.com/playlist?list={Uri.EscapeDataString(id)}";
-                var json = await _runYtDlp("--flat-playlist --playlist-items 0 -J --no-warnings", url);
+                var json = await _runYtDlp("--flat-playlist --playlist-items 0 -J --no-warnings", url, false);
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String)
                     title = t.GetString() ?? id;

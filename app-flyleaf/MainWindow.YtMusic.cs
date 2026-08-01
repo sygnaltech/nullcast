@@ -26,7 +26,7 @@ namespace VideoPlayer
         /// <summary>Called when the YT Music tab is selected. Lazily builds the service + playlist view.</summary>
         private void EnterYtMusicTab()
         {
-            _ytmusic ??= new YtMusicService((args, url) => RunYtDlp(args, url));
+            _ytmusic ??= new YtMusicService((args, url, useCookies) => RunYtDlp(args, url, useCookies));
 
             if (!_ytmusicLoaded)
                 ShowYtMusicPlaylists();
@@ -57,9 +57,9 @@ namespace VideoPlayer
                 });
 
             YtMusicStatusText.Visibility = Visibility.Visible;
-            YtMusicStatusText.Text = _settings.UseBrowserCookies
-                ? "Open a playlist, search above, or pin another playlist."
-                : "Tip: turn on File ▸ “Use Edge cookies” so your private playlists and Liked Music load.";
+            YtMusicStatusText.Text =
+                "Search above to play any song. Open a public playlist, or pin one by URL. " +
+                "Liked Music / private playlists need Edge signed in and closed.";
         }
 
         private async void YtMusicSearch_KeyDown(object sender, KeyEventArgs e)
@@ -94,7 +94,9 @@ namespace VideoPlayer
 
             var items = await _ytmusic.GetPlaylistTracksAsync(playlist.PlaylistId);
             RenderYtMusicTracks(items,
-                "This playlist is empty — or, if it's private, turn on File ▸ “Use Edge cookies” and try again.");
+                "Couldn't load this playlist. Public playlists work as-is; private playlists and " +
+                "Liked Music need you signed into Edge — and Edge fully closed, since yt-dlp can't " +
+                "read its cookies while it's running.");
         }
 
         private void RenderYtMusicTracks(System.Collections.Generic.IReadOnlyList<YtMusicItem> items, string emptyMessage)
