@@ -831,6 +831,12 @@
                                   Header="Use _Edge cookies for private videos"
                                   IsCheckable="True"
                                   Click="ToggleBrowserCookies_Click"/>
+                        <MenuItem x:Name="CookieFileMenuItem"
+                                  Header="Load _cookies.txt file…"
+                                  Click="LoadCookiesFile_Click"/>
+                        <MenuItem x:Name="ClearCookieFileMenuItem"
+                                  Header="Clear cookies.txt file"
+                                  Click="ClearCookiesFile_Click"/>
                         <MenuItem x:Name="AutoPlayNextMenuItem"
                                   Header="_Auto-play next episode"
                                   IsCheckable="True"

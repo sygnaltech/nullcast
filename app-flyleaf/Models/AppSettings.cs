@@ -28,6 +28,15 @@ namespace VideoPlayer.Models
         public string CookieBrowser { get; set; } = "edge";
 
         /// <summary>
+        /// Path to an exported Netscape <c>cookies.txt</c>. When set (and the file exists), yt-dlp
+        /// is run with <c>--cookies FILE</c> instead of <c>--cookies-from-browser</c> — this avoids
+        /// the Windows cookie-DB lock and app-bound-encryption that make live browser reads fail
+        /// while the browser is open. Takes precedence over <see cref="UseBrowserCookies"/>.
+        /// </summary>
+        [JsonPropertyName("cookie_file")]
+        public string CookieFilePath { get; set; } = "";
+
+        /// <summary>
         /// Plex results panel view: <c>true</c> = poster/tile grid, <c>false</c> = compact list.
         /// Defaults to tiles. Remembered across sessions.
         /// </summary>

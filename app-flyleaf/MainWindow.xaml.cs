@@ -475,6 +475,7 @@ namespace VideoPlayer
             await LoadSettingsAsync();
             CookiesMenuItem.IsChecked = _settings.UseBrowserCookies;
             AutoPlayNextMenuItem.IsChecked = _settings.AutoPlayNextEpisode;
+            UpdateCookieFileMenuState();
             ApplyPlexViewMode();   // restore the remembered Plex list/tile view
 
             await _history.LoadAsync();
@@ -1830,6 +1831,40 @@ namespace VideoPlayer
             SaveSettings();
         }
 
+        private void LoadCookiesFile_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Title           = "Select exported cookies.txt",
+                Filter          = "Cookie files (*.txt)|*.txt|All files (*.*)|*.*",
+                CheckFileExists = true,
+            };
+            if (dlg.ShowDialog(this) == true)
+            {
+                _settings.CookieFilePath = dlg.FileName;
+                SaveSettings();
+                UpdateCookieFileMenuState();
+            }
+        }
+
+        private void ClearCookiesFile_Click(object sender, RoutedEventArgs e)
+        {
+            _settings.CookieFilePath = "";
+            SaveSettings();
+            UpdateCookieFileMenuState();
+        }
+
+        /// <summary>Reflects the loaded cookies.txt (if any) in the File-menu items.</summary>
+        private void UpdateCookieFileMenuState()
+        {
+            var path = _settings.CookieFilePath;
+            bool set  = !string.IsNullOrWhiteSpace(path);
+            CookieFileMenuItem.Header    = set && File.Exists(path)
+                ? $"Cookies file: {System.IO.Path.GetFileName(path)}"
+                : "Load _cookies.txt file…";
+            ClearCookieFileMenuItem.IsEnabled = set;
+        }
+
         private void ToggleAutoPlayNext_Click(object sender, RoutedEventArgs e)
         {
             _settings.AutoPlayNextEpisode = AutoPlayNextMenuItem.IsChecked;
@@ -1950,6 +1985,30 @@ namespace VideoPlayer
             return (title, videoUrl, audioUrl);
         }
 
+        /// <summary>
+        /// Builds the yt-dlp cookie flag (with a trailing space), honoring precedence:
+        /// an exported cookies.txt wins (no browser lock / app-bound-encryption issues), then
+        /// live browser cookies. <paramref name="cookieOverride"/>: null follows the global
+        /// setting, false forces no cookies, true forces cookies (file or browser) on.
+        /// </summary>
+        private string ResolveCookieArgs(bool? cookieOverride)
+        {
+            if (cookieOverride == false) return "";
+
+            // Exported cookies.txt takes precedence — the robust path that works while the
+            // browser is open and regardless of app-bound cookie encryption.
+            var file = _settings.CookieFilePath;
+            if (!string.IsNullOrWhiteSpace(file) && File.Exists(file))
+                return $"--cookies \"{file}\" ";
+
+            // Fall back to a live browser read (borrow the user's logged-in session).
+            var useBrowser = cookieOverride ?? _settings.UseBrowserCookies;
+            if (useBrowser && !string.IsNullOrWhiteSpace(_settings.CookieBrowser))
+                return $"--cookies-from-browser {_settings.CookieBrowser} ";
+
+            return "";
+        }
+
         /// <param name="cookieOverride">
         /// null → follow the global "Use browser cookies" setting (default).
         /// false → never send cookies (e.g. public YouTube-Music search, which doesn't need them
@@ -1958,12 +2017,7 @@ namespace VideoPlayer
         /// </param>
         private async Task<string> RunYtDlp(string arguments, string url, bool? cookieOverride = null)
         {
-            // When enabled, borrow the user's browser session so private / logged-in content
-            // (e.g. a friends-only Facebook video) can be resolved.
-            var useCookies = cookieOverride ?? _settings.UseBrowserCookies;
-            var cookies = useCookies && !string.IsNullOrWhiteSpace(_settings.CookieBrowser)
-                ? $"--cookies-from-browser {_settings.CookieBrowser} "
-                : "";
+            var cookies = ResolveCookieArgs(cookieOverride);
 
             var process = new Process
             {
