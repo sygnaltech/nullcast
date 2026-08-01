@@ -120,6 +120,35 @@ The Plex tab demonstrates the list conventions and the dual **list / tile** view
 Posters come from Plex's photo transcoder (`PlexService.ResolveThumbUrl`) so artwork is
 downloaded pre-sized rather than at full resolution.
 
+### Sidebar tabs (vertical strip)
+
+The side-panel tabs run as a **vertical strip down the left edge** of the panel, not a
+horizontal row — this scales to many tabs without clipping. Each tab is a `VerticalTabButton`:
+its label is rotated 90° (`RotateTransform Angle="-90"`, reads bottom-to-top) and the active
+tab shows a **3px left accent bar** (`#7D97FF`) plus bright text. Active state is still driven
+in code by `StyleTab` (it sets `Foreground` + `BorderBrush`; on the vertical button `BorderBrush`
+paints the left bar instead of the old underline). The strip lives in an auto-width column with
+the content in the `*` column beside it, and is wrapped in a `ScrollViewer` (house
+`ThinDarkScrollBar`) so a short window scrolls rather than hiding a tab. Order: Playlist ·
+History · Plex · Podcasts · YT Music.
+
+### Menu toggle checkmarks
+
+Checkable `MenuItem`s (File ▸ *Use Edge cookies*, *Auto-play next episode*) render a `✓` glyph
+(`CheckGlyph`, accent `#7D97FF`) in the item's left icon slot, shown via an `IsChecked=True`
+trigger in the custom `MenuItem` template. Without it the toggle state is invisible — the custom
+template owns the whole visual tree, so the system check adorner never appears.
+
+### YT Music tab
+
+The **YT Music** sidebar tab (a fifth `SidebarTab`) mirrors the Podcasts tab's structure —
+search box, status line, and a single `ListBox` (`YtMusicItems`) whose rows reuse
+`DisplayTitle` / `DisplaySubtitle` for both **playlist** rows (drill chevron, via
+`IsPlaylist`) and **track** rows (play). Data is yt-dlp-backed (`YtMusicService`), not a REST
+service, but it follows the same service + list-render conventions. A "Back to playlists" link
+and a "＋ Pin playlist" action (clipboard URL → `AppSettings.YtMusicPlaylists`) sit in a thin
+toolbar under the search box. Same `ThinDarkScrollBar` + `ListItemContainer` rules apply.
+
 ### Up-next auto-play card
 
 At the very end of a TV episode (`Status.Ended`), if the next episode in the same show is

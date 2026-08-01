@@ -76,6 +76,15 @@
                                                  ContentSource="Icon"
                                                  VerticalAlignment="Center"
                                                  Visibility="Collapsed"/>
+                                <!-- Check glyph for IsCheckable toggle items (shown when IsChecked) -->
+                                <TextBlock x:Name="CheckGlyph"
+                                           Grid.Column="0"
+                                           Text="✓" FontSize="12" FontWeight="Bold"
+                                           Width="18" Margin="10,0,0,0"
+                                           Foreground="#7D97FF"
+                                           VerticalAlignment="Center"
+                                           TextAlignment="Center"
+                                           Visibility="Collapsed"/>
                                 <!-- Header text -->
                                 <ContentPresenter Grid.Column="1"
                                                  ContentSource="Header"
@@ -136,6 +145,9 @@
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Foreground" Value="#565C6D"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckGlyph" Property="Visibility" Value="Visible"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -278,6 +290,42 @@
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Vertical sidebar tab: label rotated 90° with a 3px left accent bar when active.
+             Active state is driven in code by StyleTab (Foreground + BorderBrush), same as the
+             old horizontal tabs — here BorderBrush paints the left bar instead of an underline. -->
+        <Style x:Key="VerticalTabButton" TargetType="Button">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="Foreground"      Value="#848B9F"/>
+            <Setter Property="BorderBrush"     Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+            <Setter Property="FontSize"        Value="14"/>
+            <Setter Property="FontWeight"      Value="SemiBold"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="Padding"         Value="9,18"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <ContentPresenter.LayoutTransform>
+                                    <RotateTransform Angle="-90"/>
+                                </ContentPresenter.LayoutTransform>
+                            </ContentPresenter>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0AFFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -910,43 +958,51 @@
                 <!-- Side panel: tab header + swappable Playlist / History content -->
                 <Border x:Name="SidePanel"
                         Grid.Column="0"
-                        Width="325"
+                        Width="366"
                         Background="#0F1118"
                         BorderBrush="#0FFFFFFF"
                         BorderThickness="1,0,0,0"
                         Visibility="Collapsed">
                   <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                    <!-- Tab header (underline tabs) -->
-                    <Border Grid.Row="0" Background="#0F1118"
-                            BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
-                        <StackPanel Orientation="Horizontal" Margin="20,0">
-                            <Button x:Name="PlaylistTabButton" Content="Playlist"
-                                    Click="ShowPlaylistTab_Click"
-                                    Style="{StaticResource TabButton}"
-                                    Foreground="#E7E9F1" BorderBrush="#7D97FF"
-                                    Margin="0,0,30,0"/>
-                            <Button x:Name="HistoryTabButton" Content="History"
-                                    Click="ShowHistoryTab_Click"
-                                    Style="{StaticResource TabButton}"
-                                    Margin="0,0,30,0"/>
-                            <Button x:Name="PlexTabButton" Content="Plex"
-                                    Click="ShowPlexTab_Click"
-                                    Style="{StaticResource TabButton}"
-                                    Margin="0,0,30,0"/>
-                            <Button x:Name="PodcastsTabButton" Content="Podcasts"
-                                    Click="ShowPodcastsTab_Click"
-                                    Style="{StaticResource TabButton}"/>
-                        </StackPanel>
+                    <!-- Vertical tab strip (left edge). Labels rotated 90°; active tab gets an
+                         accent left-bar + bright text via StyleTab. Scrolls if a short window
+                         can't fit every tab, so a tab can never be clipped out of reach. -->
+                    <Border Grid.Column="0" Background="#0F1118"
+                            BorderBrush="#0FFFFFFF" BorderThickness="0,0,1,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ScrollViewer.Resources>
+                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                            </ScrollViewer.Resources>
+                            <StackPanel Orientation="Vertical" Margin="0,12">
+                                <Button x:Name="PlaylistTabButton" Content="Playlist"
+                                        Click="ShowPlaylistTab_Click"
+                                        Style="{StaticResource VerticalTabButton}"
+                                        Foreground="#E7E9F1" BorderBrush="#7D97FF"/>
+                                <Button x:Name="HistoryTabButton" Content="History"
+                                        Click="ShowHistoryTab_Click"
+                                        Style="{StaticResource VerticalTabButton}"/>
+                                <Button x:Name="PlexTabButton" Content="Plex"
+                                        Click="ShowPlexTab_Click"
+                                        Style="{StaticResource VerticalTabButton}"/>
+                                <Button x:Name="PodcastsTabButton" Content="Podcasts"
+                                        Click="ShowPodcastsTab_Click"
+                                        Style="{StaticResource VerticalTabButton}"/>
+                                <Button x:Name="YtMusicTabButton" Content="YT Music"
+                                        Click="ShowYtMusicTab_Click"
+                                        Style="{StaticResource VerticalTabButton}"/>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Border>
 
                     <!-- Playlist content (online bookmarks; requires sign-in) -->
                     <Grid x:Name="PlaylistContent"
-                          Grid.Row="1"
+                          Grid.Column="1"
                           AllowDrop="True"
                           DragOver="PlaylistArea_DragOver"
                           Drop="PlaylistArea_Drop">
@@ -1087,7 +1143,7 @@
                     <!-- end PlaylistContent -->
 
                     <!-- History content (local-only playback history) -->
-                    <Grid x:Name="HistoryContent" Grid.Row="1" Visibility="Collapsed">
+                    <Grid x:Name="HistoryContent" Grid.Column="1" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -1160,7 +1216,7 @@
                     <!-- end HistoryContent -->
 
                     <!-- Plex content (separate ecosystem — browse/search a Plex Media Server) -->
-                    <Grid x:Name="PlexContent" Grid.Row="1" Visibility="Collapsed">
+                    <Grid x:Name="PlexContent" Grid.Column="1" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>  <!-- library selector -->
                             <RowDefinition Height="Auto"/>  <!-- category dropdown -->
@@ -1412,7 +1468,7 @@
                     <!-- end PlexContent -->
 
                     <!-- Podcast content (Apple Podcasts search → episode list → audio playback) -->
-                    <Grid x:Name="PodcastContent" Grid.Row="1" Visibility="Collapsed">
+                    <Grid x:Name="PodcastContent" Grid.Column="1" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
@@ -1511,6 +1567,128 @@
                         </ListBox>
                     </Grid>
                     <!-- end PodcastContent -->
+
+                    <!-- YT Music content (yt-dlp-backed: search / Liked + pinned playlists → tracks) -->
+                    <Grid x:Name="YtMusicContent" Grid.Column="1" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Search box with placeholder -->
+                        <Grid Grid.Row="0" Margin="20,16,20,10">
+                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
+                                    BorderThickness="1" CornerRadius="8"/>
+                            <TextBox x:Name="YtMusicSearchBox"
+                                     Height="38"
+                                     VerticalContentAlignment="Center"
+                                     Padding="12,0"
+                                     FontSize="13"
+                                     Background="Transparent"
+                                     Foreground="#E7E9F1"
+                                     CaretBrush="#E7E9F1"
+                                     BorderThickness="0"
+                                     KeyDown="YtMusicSearch_KeyDown"/>
+                            <TextBlock Text="Search YouTube Music…  (Enter)"
+                                       Foreground="#565C6D"
+                                       Margin="13,0,0,0"
+                                       FontSize="13"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text.Length, ElementName=YtMusicSearchBox}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+
+                        <!-- Toolbar: back to playlists (when in a track view) + pin a playlist -->
+                        <Grid Grid.Row="1" Margin="20,0,20,6">
+                            <Button x:Name="YtMusicBackButton"
+                                    Content="‹  Back to playlists"
+                                    Click="YtMusicBack_Click"
+                                    HorizontalAlignment="Left"
+                                    Padding="0"
+                                    FontSize="12"
+                                    Foreground="#7D97FF"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Visibility="Collapsed"/>
+                            <Button x:Name="YtMusicPinButton"
+                                    Content="＋ Pin playlist"
+                                    Click="YtMusicPin_Click"
+                                    HorizontalAlignment="Right"
+                                    Padding="0"
+                                    FontSize="12"
+                                    Foreground="#848B9F"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    ToolTip="Pin a YouTube Music playlist by its URL"/>
+                        </Grid>
+
+                        <!-- Status / empty state -->
+                        <TextBlock x:Name="YtMusicStatusText"
+                                   Grid.Row="2"
+                                   Foreground="#848B9F"
+                                   FontSize="12"
+                                   Margin="20,4,20,4"
+                                   TextWrapping="Wrap"
+                                   Text="Your Liked Music and pinned playlists appear here. Search above, or pin a playlist."/>
+
+                        <!-- Results list (playlists or tracks) -->
+                        <ListBox x:Name="YtMusicResultsBox"
+                                 Grid.Row="3"
+                                 Background="Transparent"
+                                 Foreground="#E7E9F1"
+                                 BorderThickness="0"
+                                 Padding="8,2,8,8"
+                                 ItemContainerStyle="{StaticResource ListItemContainer}"
+                                 ItemsSource="{Binding YtMusicItems}"
+                                 SelectionChanged="YtMusicResultsBox_SelectionChanged"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Resources>
+                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                            </ListBox.Resources>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="11,9">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding DisplayTitle}"
+                                                       TextWrapping="Wrap"
+                                                       FontSize="14"
+                                                       FontWeight="Medium"
+                                                       LineHeight="19"
+                                                       Foreground="#E7E9F1"/>
+                                            <TextBlock Text="{Binding DisplaySubtitle}"
+                                                       FontSize="12"
+                                                       Foreground="#848B9F"
+                                                       Margin="0,6,0,0"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <!-- Drill chevron on playlist rows -->
+                                        <TextBlock Grid.Column="1" Text="›" FontSize="20" Foreground="#565C6D"
+                                                   VerticalAlignment="Center" Margin="8,0,4,0"
+                                                   Visibility="{Binding IsPlaylist, Converter={StaticResource BoolToVisibility}}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                    <!-- end YtMusicContent -->
                   </Grid>
                 </Border>
                 <!-- end SidePanel -->

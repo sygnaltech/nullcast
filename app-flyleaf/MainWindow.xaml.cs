@@ -25,7 +25,7 @@ using VideoPlayer.Services;
 
 namespace VideoPlayer
 {
-    public enum SidebarTab { Playlist, History, Plex, Podcasts }
+    public enum SidebarTab { Playlist, History, Plex, Podcasts, YtMusic }
 
     public partial class MainWindow : Window
     {
@@ -612,6 +612,7 @@ namespace VideoPlayer
         private void ShowHistoryTab_Click(object sender, RoutedEventArgs e)  => SelectTab(SidebarTab.History);
         private void ShowPlexTab_Click(object sender, RoutedEventArgs e)     => SelectTab(SidebarTab.Plex);
         private void ShowPodcastsTab_Click(object sender, RoutedEventArgs e) => SelectTab(SidebarTab.Podcasts);
+        private void ShowYtMusicTab_Click(object sender, RoutedEventArgs e)  => SelectTab(SidebarTab.YtMusic);
 
         private void SelectTab(SidebarTab tab)
         {
@@ -625,6 +626,7 @@ namespace VideoPlayer
             HistoryContent.Visibility  = tab == SidebarTab.History  ? Visibility.Visible : Visibility.Collapsed;
             PlexContent.Visibility     = tab == SidebarTab.Plex     ? Visibility.Visible : Visibility.Collapsed;
             PodcastContent.Visibility  = tab == SidebarTab.Podcasts ? Visibility.Visible : Visibility.Collapsed;
+            YtMusicContent.Visibility  = tab == SidebarTab.YtMusic  ? Visibility.Visible : Visibility.Collapsed;
 
             // Underline tabs: active reads bright with an accent underline, inactive dims.
             var accent  = (Brush)FindResource("AccentBrush");
@@ -635,9 +637,11 @@ namespace VideoPlayer
             StyleTab(HistoryTabButton,  tab == SidebarTab.History,  accent, primary, muted);
             StyleTab(PlexTabButton,     tab == SidebarTab.Plex,     accent, primary, muted);
             StyleTab(PodcastsTabButton, tab == SidebarTab.Podcasts, accent, primary, muted);
+            StyleTab(YtMusicTabButton,  tab == SidebarTab.YtMusic,  accent, primary, muted);
 
             if (tab == SidebarTab.History) RefreshHistoryView();
             if (tab == SidebarTab.Plex)    EnterPlexTab();
+            if (tab == SidebarTab.YtMusic) EnterYtMusicTab();
         }
 
         private static void StyleTab(Button btn, bool active, Brush accent, Brush primary, Brush muted)

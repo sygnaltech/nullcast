@@ -41,5 +41,23 @@ namespace VideoPlayer.Models
         /// </summary>
         [JsonPropertyName("autoplay_next_episode")]
         public bool AutoPlayNextEpisode { get; set; } = true;
+
+        /// <summary>
+        /// YouTube Music playlists the user has pinned into the YT Music tab (by URL).
+        /// Phase 1 has no library auto-enumeration, so pins + Liked Music are how playlists
+        /// show up. Persisted across sessions.
+        /// </summary>
+        [JsonPropertyName("ytmusic_playlists")]
+        public List<YtMusicPlaylistRef> YtMusicPlaylists { get; set; } = new();
+    }
+
+    /// <summary>A pinned YouTube Music playlist: its id plus a cached display title.</summary>
+    public class YtMusicPlaylistRef
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = "";
+
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = "";
     }
 }
