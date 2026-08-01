@@ -128,16 +128,22 @@ its label is rotated 90° (`RotateTransform Angle="-90"`, reads bottom-to-top) a
 tab shows a **3px left accent bar** (`#7D97FF`) plus bright text. Active state is still driven
 in code by `StyleTab` (it sets `Foreground` + `BorderBrush`; on the vertical button `BorderBrush`
 paints the left bar instead of the old underline). The strip lives in an auto-width column with
-the content in the `*` column beside it, and is wrapped in a `ScrollViewer` (house
-`ThinDarkScrollBar`) so a short window scrolls rather than hiding a tab. Order: Playlist ·
-History · Plex · Podcasts · YT Music.
+the content in the `*` column beside it. There is **no divider between the strip and the content**
+— the panel's own left border (video ↔ panel) is the only separator. The strip is wrapped in a
+`ScrollViewer` with the scrollbar **hidden** (`VerticalScrollBarVisibility="Hidden"`), so a very
+short window can still wheel-scroll to a tab but no stray scrollbar ever shows between tabs and
+content. Order: Playlist · History · Plex · Podcasts · YT Music.
 
-### Menu toggle checkmarks
+### Menu items — checkmarks & separators
 
 Checkable `MenuItem`s (File ▸ *Use Edge cookies*, *Auto-play next episode*) render a `✓` glyph
 (`CheckGlyph`, accent `#7D97FF`) in the item's left icon slot, shown via an `IsChecked=True`
 trigger in the custom `MenuItem` template. Without it the toggle state is invisible — the custom
 template owns the whole visual tree, so the system check adorner never appears.
+
+Separators **inside menus** must be styled via `x:Key="{x:Static MenuItem.SeparatorStyleKey}"`,
+not the implicit `{x:Type Separator}` style (WPF menus resolve the keyed one). Ours is a dim
+`#12FFFFFF` 1px line inset `Margin="12,5"` so items aren't smashed against a bright default bar.
 
 ### YT Music tab
 

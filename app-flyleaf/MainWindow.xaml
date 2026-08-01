@@ -167,6 +167,19 @@
             </Setter>
         </Style>
 
+        <!-- Separators INSIDE menus use this keyed style, not the implicit one above (WPF menus
+             resolve MenuItem.SeparatorStyleKey). Dim + inset + vertical breathing room so items
+             aren't smashed against a bright default line. -->
+        <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="{x:Type Separator}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Separator}">
+                        <Border Height="1" Background="#12FFFFFF" Margin="12,5"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
 
         <!-- Dark ComboBoxItem -->
         <Style TargetType="{x:Type ComboBoxItem}">
@@ -970,15 +983,12 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Vertical tab strip (left edge). Labels rotated 90°; active tab gets an
-                         accent left-bar + bright text via StyleTab. Scrolls if a short window
-                         can't fit every tab, so a tab can never be clipped out of reach. -->
-                    <Border Grid.Column="0" Background="#0F1118"
-                            BorderBrush="#0FFFFFFF" BorderThickness="0,0,1,0">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                         accent left-bar + bright text via StyleTab. No internal divider — the
+                         panel's own left border is the separator. Wheel-scrolls if a very short
+                         window can't fit every tab (scrollbar hidden so no stray bar appears). -->
+                    <Border Grid.Column="0" Background="#0F1118">
+                        <ScrollViewer VerticalScrollBarVisibility="Hidden"
                                       HorizontalScrollBarVisibility="Disabled">
-                            <ScrollViewer.Resources>
-                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
-                            </ScrollViewer.Resources>
                             <StackPanel Orientation="Vertical" Margin="0,12">
                                 <Button x:Name="PlaylistTabButton" Content="Playlist"
                                         Click="ShowPlaylistTab_Click"
