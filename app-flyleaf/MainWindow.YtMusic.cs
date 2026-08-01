@@ -11,9 +11,11 @@ using VideoPlayer.Services;
 namespace VideoPlayer
 {
     /// <summary>
-    /// YouTube Music tab (Phase 1). Data comes from <see cref="YtMusicService"/> (yt-dlp-backed):
-    /// search the catalog, browse Liked Music + pinned playlists, and play a track through the
-    /// player's normal yt-dlp path. Playlist *management* and library auto-enumeration are Phase 2.
+    /// YouTube Music tab. Two data layers: <see cref="YtMusicInnerTube"/> (the real YT Music web
+    /// API, authenticated with the user's cookies.txt) reaches the library — Liked Music, the
+    /// user's playlists, and each playlist's tracks — while <see cref="YtMusicService"/> (yt-dlp)
+    /// handles catalog search and public-playlist expansion. Playback of any track goes through
+    /// the player's normal yt-dlp path.
     /// </summary>
     public partial class MainWindow
     {
@@ -21,32 +23,48 @@ namespace VideoPlayer
         public ObservableCollection<YtMusicItem> YtMusicItems { get; } = new();
 
         private YtMusicService _ytmusic;
+        private YtMusicInnerTube _ytMusicApi;
         private bool _ytmusicLoaded;         // playlists view populated at least once
 
-        /// <summary>Called when the YT Music tab is selected. Lazily builds the service + playlist view.</summary>
+        /// <summary>Called when the YT Music tab is selected. Lazily builds the services + playlist view.</summary>
         private void EnterYtMusicTab()
         {
-            _ytmusic ??= new YtMusicService((args, url, useCookies) => RunYtDlp(args, url, useCookies));
+            _ytmusic    ??= new YtMusicService((args, url, useCookies) => RunYtDlp(args, url, useCookies));
+            _ytMusicApi ??= new YtMusicInnerTube(() => _settings.CookieFilePath);
 
             if (!_ytmusicLoaded)
-                ShowYtMusicPlaylists();
+                _ = ShowYtMusicPlaylistsAsync();
         }
 
-        /// <summary>Top view: Liked Music + the user's pinned playlists.</summary>
-        private void ShowYtMusicPlaylists()
+        /// <summary>
+        /// Top view: Liked Music + the user's library playlists (via the authenticated YT Music
+        /// API) plus any pinned playlists. Falls back to pinned-only when there's no cookies.txt.
+        /// </summary>
+        private async Task ShowYtMusicPlaylistsAsync()
         {
             _ytmusicLoaded = true;
             YtMusicBackButton.Visibility = Visibility.Collapsed;
-
             YtMusicItems.Clear();
-            YtMusicItems.Add(new YtMusicItem
-            {
-                Kind       = YtMusicKind.Playlist,
-                PlaylistId = YtMusicService.LikedMusicId,
-                Title      = "Liked Music",
-                Subtitle   = "Your liked songs",
-            });
 
+            bool authed = _ytMusicApi.IsConfigured;
+
+            if (authed)
+            {
+                YtMusicStatusText.Visibility = Visibility.Visible;
+                YtMusicStatusText.Text = "Loading your library…";
+
+                // Liked Music first, then the user's playlists.
+                YtMusicItems.Add(new YtMusicItem
+                {
+                    Kind = YtMusicKind.Playlist, PlaylistId = "LM",
+                    Title = "Liked Music", Subtitle = "Your liked songs",
+                });
+
+                var library = await _ytMusicApi.GetLibraryPlaylistsAsync();
+                foreach (var pl in library) YtMusicItems.Add(pl);
+            }
+
+            // Pinned playlists (works with or without auth).
             foreach (var p in _settings.YtMusicPlaylists)
                 YtMusicItems.Add(new YtMusicItem
                 {
@@ -56,10 +74,18 @@ namespace VideoPlayer
                     Subtitle   = "Playlist",
                 });
 
-            YtMusicStatusText.Visibility = Visibility.Visible;
-            YtMusicStatusText.Text =
-                "Search above to play any song. Open a public playlist, or pin one by URL. " +
-                "Liked Music / private playlists need Edge signed in and closed.";
+            if (YtMusicItems.Count > 0)
+            {
+                YtMusicStatusText.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                YtMusicStatusText.Visibility = Visibility.Visible;
+                YtMusicStatusText.Text = authed
+                    ? "No playlists yet. Search above to play any song, or pin a playlist by URL."
+                    : "Search above to play any song, or pin a public playlist by its URL. " +
+                      "For Liked Music and your library, load a cookies.txt via File ▸ Load cookies.txt.";
+            }
         }
 
         private async void YtMusicSearch_KeyDown(object sender, KeyEventArgs e)
@@ -85,18 +111,24 @@ namespace VideoPlayer
 
         private async Task LoadYtMusicPlaylist(YtMusicItem playlist)
         {
-            if (!EnsureYtDlpReady()) return;
-
             YtMusicBackButton.Visibility = Visibility.Visible;
             YtMusicStatusText.Visibility = Visibility.Visible;
             YtMusicStatusText.Text = $"Loading {playlist.Title}…";
             YtMusicItems.Clear();
 
-            var items = await _ytmusic.GetPlaylistTracksAsync(playlist.PlaylistId);
+            // Authenticated YT Music API first — it's the only thing that can read the library
+            // (Liked Music, your playlists). If it comes back empty (e.g. a public playlist, or no
+            // cookies), fall back to yt-dlp's public expansion.
+            var items = new System.Collections.Generic.List<YtMusicItem>();
+            if (_ytMusicApi.IsConfigured)
+                items = await _ytMusicApi.GetPlaylistTracksAsync(playlist.PlaylistId);
+
+            if (items.Count == 0 && _ytdlpReady)
+                items = await _ytmusic.GetPlaylistTracksAsync(playlist.PlaylistId);
+
             RenderYtMusicTracks(items,
-                "Couldn't load this playlist. Public playlists work as-is; private playlists and " +
-                "Liked Music need you signed into Edge — and Edge fully closed, since yt-dlp can't " +
-                "read its cookies while it's running.");
+                "Couldn't load this playlist. If it's private or Liked Music, load a current " +
+                "cookies.txt (File ▸ Load cookies.txt) exported while signed into YouTube Music.");
         }
 
         private void RenderYtMusicTracks(System.Collections.Generic.IReadOnlyList<YtMusicItem> items, string emptyMessage)
@@ -134,7 +166,7 @@ namespace VideoPlayer
             await PlayUrl(item.Url, item.Title);
         }
 
-        private void YtMusicBack_Click(object sender, RoutedEventArgs e) => ShowYtMusicPlaylists();
+        private async void YtMusicBack_Click(object sender, RoutedEventArgs e) => await ShowYtMusicPlaylistsAsync();
 
         private async void YtMusicPin_Click(object sender, RoutedEventArgs e)
         {
@@ -167,13 +199,13 @@ namespace VideoPlayer
             {
                 MessageBox.Show("Couldn't read that playlist link.", "Pin playlist",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
-                ShowYtMusicPlaylists();
+                await ShowYtMusicPlaylistsAsync();
                 return;
             }
 
             _settings.YtMusicPlaylists.Add(pref);
             SaveSettings();
-            ShowYtMusicPlaylists();
+            await ShowYtMusicPlaylistsAsync();
         }
 
         /// <summary>Guards actions that shell out to yt-dlp; shows a hint if it isn't ready yet.</summary>
