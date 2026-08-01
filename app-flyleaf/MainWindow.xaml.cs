@@ -1995,9 +1995,12 @@ namespace VideoPlayer
         {
             if (cookieOverride == false) return "";
 
-            // Exported cookies.txt takes precedence — the robust path that works while the
-            // browser is open and regardless of app-bound cookie encryption.
-            var file = _settings.CookieFilePath;
+            // Prefer live cookies pulled from the browser-helper broker (always current), then a
+            // manually exported cookies.txt. Both avoid the browser cookie-DB lock / app-bound
+            // encryption that make --cookies-from-browser fail.
+            var file = !string.IsNullOrWhiteSpace(_liveCookiePath) && File.Exists(_liveCookiePath)
+                ? _liveCookiePath
+                : _settings.CookieFilePath;
             if (!string.IsNullOrWhiteSpace(file) && File.Exists(file))
                 return $"--cookies \"{file}\" ";
 

@@ -150,9 +150,16 @@ namespace VideoPlayer.Services
             try
             {
                 var jar = new Dictionary<string, string>(StringComparer.Ordinal);
-                foreach (var line in File.ReadLines(path))
+                foreach (var raw in File.ReadLines(path))
                 {
-                    if (line.Length == 0 || line[0] == '#') continue;
+                    var line = raw;
+                    // Netscape flags HttpOnly cookies with a "#HttpOnly_" domain prefix — these are
+                    // the session cookies (__Secure-3PSID, LOGIN_INFO, …) that actually prove login,
+                    // so keep them; skip only genuine comment/blank lines.
+                    if (line.StartsWith("#HttpOnly_", StringComparison.Ordinal))
+                        line = line.Substring("#HttpOnly_".Length);
+                    else if (line.Length == 0 || line[0] == '#')
+                        continue;
                     var p = line.Split('\t');
                     if (p.Length < 7) continue;
                     var domain = p[0].TrimStart('.');
