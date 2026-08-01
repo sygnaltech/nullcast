@@ -1886,7 +1886,8 @@ namespace VideoPlayer
         /// ~1,800 sites (YouTube, Reddit, Facebook, TikTok, Vimeo, ...). Split-stream
         /// sources (separate video+audio) are recombined via <see cref="_pendingExternalAudioUrl"/>.
         /// </summary>
-        private async Task PlayUrl(string url, string displayTitle = null, bool forceDirect = false)
+        private async Task PlayUrl(string url, string displayTitle = null, bool forceDirect = false,
+                                  bool audioOnly = false, bool? cookieOverride = null)
         {
             try
             {
@@ -1928,7 +1929,7 @@ namespace VideoPlayer
                     return;
                 }
 
-                var (title, videoUrl, audioUrl) = await ResolveWithYtDlpAsync(url);
+                var (title, videoUrl, audioUrl) = await ResolveWithYtDlpAsync(url, audioOnly, cookieOverride);
 
                 if (string.IsNullOrEmpty(videoUrl))
                     throw new Exception("Could not resolve a playable stream for this URL.");
@@ -1964,12 +1965,16 @@ namespace VideoPlayer
         /// selector prefers a single muxed stream so common sources keep their existing
         /// single-URL behaviour and only Reddit-style split sources use the external-audio path.
         /// </summary>
-        private async Task<(string title, string videoUrl, string audioUrl)> ResolveWithYtDlpAsync(string url)
+        private async Task<(string title, string videoUrl, string audioUrl)> ResolveWithYtDlpAsync(
+            string url, bool audioOnly = false, bool? cookieOverride = null)
         {
-            var fmt = $"best[height<={_selectedHeight}]/bv*[height<={_selectedHeight}]+ba/best";
+            // Audio-first for music (YT Music "art tracks" are audio-only); video-first otherwise.
+            var fmt = audioOnly
+                ? "bestaudio/best"
+                : $"best[height<={_selectedHeight}]/bv*[height<={_selectedHeight}]+ba/best";
 
-            var titleTask  = RunYtDlp("--no-warnings --print \"%(title)s\"", url);
-            var streamTask = RunYtDlp($"--no-warnings -f \"{fmt}\" -g", url);
+            var titleTask  = RunYtDlp("--no-warnings --print \"%(title)s\"", url, cookieOverride);
+            var streamTask = RunYtDlp($"--no-warnings -f \"{fmt}\" -g", url, cookieOverride);
             await Task.WhenAll(titleTask, streamTask);
 
             var title = FirstLine(titleTask.Result);
@@ -1995,12 +2000,12 @@ namespace VideoPlayer
         {
             if (cookieOverride == false) return "";
 
-            // Prefer live cookies pulled from the browser-helper broker (always current), then a
-            // manually exported cookies.txt. Both avoid the browser cookie-DB lock / app-bound
-            // encryption that make --cookies-from-browser fail.
-            var file = !string.IsNullOrWhiteSpace(_liveCookiePath) && File.Exists(_liveCookiePath)
-                ? _liveCookiePath
-                : _settings.CookieFilePath;
+            // A manually exported cookies.txt (avoids the browser cookie-DB lock / app-bound
+            // encryption that make --cookies-from-browser fail). NOTE: we deliberately do NOT feed
+            // the live browser-helper YouTube cookies here — valid YouTube auth cookies trigger
+            // YouTube's SABR-only streaming experiment, which strips the direct stream URLs yt-dlp
+            // needs. Live cookies are for the InnerTube library only; YT Music tracks play cookie-free.
+            var file = _settings.CookieFilePath;
             if (!string.IsNullOrWhiteSpace(file) && File.Exists(file))
                 return $"--cookies \"{file}\" ";
 

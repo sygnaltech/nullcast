@@ -187,12 +187,15 @@ namespace VideoPlayer
                 return;
             }
 
-            // Play a track through the normal yt-dlp path. Detach from the bookmark / Plex
-            // save paths so neither position-reporting nor auto-play-next-episode misfires.
+            // Play a track through the yt-dlp path — audio-first, and crucially COOKIE-FREE:
+            // valid YouTube cookies trigger the SABR-only experiment that strips stream URLs, so
+            // playback must be unauthenticated (public) even though the library needs auth.
+            // Detach from the bookmark / Plex save paths so neither position-reporting nor
+            // auto-play-next-episode misfires.
             _activeMuid = null;
             _activePlex = null;
             _seekOnPlay = null;
-            await PlayUrl(item.Url, item.Title);
+            await PlayUrl(item.Url, item.Title, audioOnly: true, cookieOverride: false);
         }
 
         private async void YtMusicBack_Click(object sender, RoutedEventArgs e) => await ShowYtMusicPlaylistsAsync();

@@ -263,10 +263,24 @@ namespace VideoPlayer.Services
             if (Prop(mrlir, "flexColumns") is { ValueKind: JsonValueKind.Array } cols)
                 foreach (var c in cols.EnumerateArray())
                 {
-                    var t = RunsText(Prop(c, "text")); // the flex column renderer wraps a "text" runs object
-                    texts.Add(t);
+                    // Each column wraps the label under
+                    // musicResponsiveListItemFlexColumnRenderer.text.runs — the runs are nested a
+                    // couple levels down, so find the first "runs" array anywhere beneath the column.
+                    var runs = FindAll(c, "runs").FirstOrDefault();
+                    texts.Add(RunsArrayText(runs));
                 }
             return texts;
+        }
+
+        /// <summary>Concatenate the text of a {"runs":[{"text":…}]} array element.</summary>
+        private static string RunsArrayText(JsonElement runs)
+        {
+            if (runs.ValueKind != JsonValueKind.Array) return "";
+            var sb = new StringBuilder();
+            foreach (var r in runs.EnumerateArray())
+                if (r.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
+                    sb.Append(t.GetString());
+            return sb.ToString();
         }
 
         /// <summary>First browseEndpoint.browseId found anywhere under a node.</summary>
