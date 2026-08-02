@@ -74,6 +74,8 @@ namespace VideoPlayer
         private ContextMenu         _playlistContextMenu;
         private ContextMenu         _videoContextMenu;
         private MenuItem            _toggleMenuItem;
+        private ContextMenu         _historyContextMenu;
+        private HistoryEntry        _historyContextMenuTarget;
 
         // App settings
         private static readonly string SettingsPath = Path.Combine(
@@ -172,31 +174,44 @@ namespace VideoPlayer
             SetupTimer();
             InitializeYtDlp();
 
-            // Build playlist context menu entirely in code
-            _toggleMenuItem = new MenuItem { Header = "Mark as Completed" };
-            var deleteMenuItem = new MenuItem { Header = "Delete" };
+            // Build playlist context menu entirely in code. It shares the themed
+            // ContextMenu/MenuItem look defined in XAML (VideoContextMenuStyle) so the
+            // icons render cleanly instead of the default empty checkmark boxes.
+            var contextMenuStyle = (Style)FindResource("VideoContextMenuStyle");
+
+            _toggleMenuItem = new MenuItem
+            {
+                Header = "Mark as Completed",
+                Icon   = MakeMenuIcon(IconCheckCircle),
+            };
+            var deleteMenuItem = new MenuItem
+            {
+                Header = "Delete",
+                Icon   = MakeMenuIcon(IconTrash),
+            };
             _toggleMenuItem.Click += PlaylistItem_ToggleCompleted_Click;
             deleteMenuItem.Click  += PlaylistItem_Delete_Click;
 
-            var menuItemStyle = new Style(typeof(MenuItem));
-            menuItemStyle.Setters.Add(new Setter(MenuItem.ForegroundProperty,
-                new SolidColorBrush(Color.FromRgb(0xE7, 0xE9, 0xF1))));
-            menuItemStyle.Setters.Add(new Setter(MenuItem.BackgroundProperty,
-                new SolidColorBrush(Color.FromRgb(0x15, 0x18, 0x26))));
-
-            _playlistContextMenu = new ContextMenu
-            {
-                Background   = new SolidColorBrush(Color.FromRgb(0x15, 0x18, 0x26)),
-                BorderBrush  = new SolidColorBrush(Color.FromRgb(0x2A, 0x30, 0x42)),
-                BorderThickness = new Thickness(1),
-                ItemContainerStyle = menuItemStyle,
-            };
+            _playlistContextMenu = new ContextMenu { Style = contextMenuStyle };
             _playlistContextMenu.Items.Add(_toggleMenuItem);
             _playlistContextMenu.Items.Add(deleteMenuItem);
             _playlistContextMenu.Opened += PlaylistContextMenu_Opened;
 
             PlaylistBox.ContextMenu = _playlistContextMenu;
             PlaylistBox.PreviewMouseRightButtonDown += PlaylistBox_PreviewMouseRightButtonDown;
+
+            // History right-click menu (Delete only), same themed look.
+            var historyDeleteItem = new MenuItem
+            {
+                Header = "Delete",
+                Icon   = MakeMenuIcon(IconTrash),
+            };
+            historyDeleteItem.Click += HistoryItem_Delete_Click;
+            _historyContextMenu = new ContextMenu { Style = contextMenuStyle };
+            _historyContextMenu.Items.Add(historyDeleteItem);
+
+            HistoryBox.ContextMenu = _historyContextMenu;
+            HistoryBox.PreviewMouseRightButtonDown += HistoryBox_PreviewMouseRightButtonDown;
 
             // Video right-click menu (styled in XAML resources).
             _videoContextMenu = (ContextMenu)FindResource("VideoContextMenu");
@@ -717,6 +732,30 @@ namespace VideoPlayer
             UpdatePlaylistVisibility();
         }
 
+        // Feather-style icon path data (24×24 viewbox), reused by the context menus.
+        private const string IconCheckCircle =
+            "M22 11.08 V12 a10 10 0 1 1 -5.93 -9.14 M22 4 L12 14.01 L9 11.01";
+        private const string IconTrash =
+            "M3 6 h18 M19 6 v14 a2 2 0 0 1 -2 2 H7 a2 2 0 0 1 -2 -2 V6 m3 0 V4 a2 2 0 0 1 2 -2 h4 a2 2 0 0 1 2 2 v2 M10 11 v6 M14 11 v6";
+
+        /// <summary>Builds a stroked 18×18 menu icon from 24×24 SVG path data.</summary>
+        private static Viewbox MakeMenuIcon(string pathData)
+        {
+            var stroke = (Brush)new BrushConverter().ConvertFromString("#E6E6E6");
+            var path = new System.Windows.Shapes.Path
+            {
+                Stroke             = stroke,
+                StrokeThickness    = 2,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap   = PenLineCap.Round,
+                StrokeLineJoin     = PenLineJoin.Round,
+                Data               = Geometry.Parse(pathData),
+            };
+            var canvas = new Canvas { Width = 24, Height = 24 };
+            canvas.Children.Add(path);
+            return new Viewbox { Width = 18, Height = 18, Child = canvas };
+        }
+
         private void PlaylistBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
             var element = e.OriginalSource as DependencyObject;
@@ -762,6 +801,28 @@ namespace VideoPlayer
 
             if (_api != null)
                 await _api.DeleteBookmarkAsync(bm.Muid);
+        }
+
+        private void HistoryBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var element = e.OriginalSource as DependencyObject;
+            while (element != null && element is not ListBoxItem)
+                element = VisualTreeHelper.GetParent(element);
+            _historyContextMenuTarget = (element as ListBoxItem)?.DataContext as HistoryEntry;
+
+            e.Handled = true;
+
+            if (_historyContextMenuTarget != null)
+                _historyContextMenu.IsOpen = true;
+        }
+
+        private void HistoryItem_Delete_Click(object sender, RoutedEventArgs e)
+        {
+            var entry = _historyContextMenuTarget;
+            if (entry == null) return;
+
+            _history.Delete(entry);
+            HistoryItems.Remove(entry);
         }
 
         // ──────────────────────────────────────────────────────

@@ -93,6 +93,15 @@ namespace VideoPlayer.Services
             return results.OrderByDescending(e => e.LastPlayedAt);
         }
 
+        /// <summary>Remove a single entry (matched by reference or URL) and persist.</summary>
+        public void Delete(HistoryEntry entry)
+        {
+            if (entry == null) return;
+            _entries.RemoveAll(e => ReferenceEquals(e, entry)
+                || string.Equals(e.Url, entry.Url, StringComparison.OrdinalIgnoreCase));
+            Save();
+        }
+
         public void Clear()
         {
             _entries.Clear();
