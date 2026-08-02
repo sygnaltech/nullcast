@@ -15,8 +15,9 @@ namespace VideoPlayer
         private const string TokenSentinel = "••••••••••••";
 
         private readonly ServicesStore _store;
-        private bool _loading;      // guards programmatic edits during load
-        private bool _tokenTouched; // true once the user edits the token field
+        private bool _loading;        // guards programmatic edits during load
+        private bool _tokenTouched;   // true once the user edits the Plex token field
+        private bool _bhTokenTouched; // true once the user edits the browser-helper key field
         private readonly bool _hadExistingToken;
 
         public ServicesSettingsDialog(ServicesStore store)
@@ -31,6 +32,13 @@ namespace VideoPlayer
             _hadExistingToken = _store.IsPlexConfigured;
             if (_hadExistingToken)
                 TokenBox.Password = TokenSentinel; // show masked, don't reveal the real token
+
+            // browser-helper credentials.
+            BhAppIdBox.Text = _store.BrowserHelperAppId;
+            if (_store.HasBrowserHelperCreds)
+                BhTokenBox.Password = TokenSentinel;
+            BhDevTokenBox.Text = _store.BrowserHelperDevToken;
+            BhDevFallbackCheck.IsChecked = _store.BrowserHelperDevTokenFallback;
             _loading = false;
 
             UpdateServerPlaceholder();
@@ -53,6 +61,16 @@ namespace VideoPlayer
         private string ResolveToken() =>
             _tokenTouched ? TokenBox.Password : _store.GetPlexToken();
 
+        private void BhTokenBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            _bhTokenTouched = true;
+        }
+
+        /// <summary>The browser-helper key: freshly-typed one, or the stored one if untouched.</summary>
+        private string ResolveBhToken() =>
+            _bhTokenTouched ? BhTokenBox.Password : _store.GetBrowserHelperToken();
+
         private async void Test_Click(object sender, RoutedEventArgs e)
         {
             TestButton.IsEnabled = false;
@@ -69,18 +87,25 @@ namespace VideoPlayer
             var server = ServerBox.Text.Trim();
             var token  = ResolveToken();
 
-            if (string.IsNullOrEmpty(server))
+            // Plex is optional — only validate/save when a server address was entered.
+            if (!string.IsNullOrEmpty(server))
             {
-                SetStatus("Enter a server address.", ok: false);
-                return;
-            }
-            if (string.IsNullOrEmpty(token))
-            {
-                SetStatus("Enter a Plex token.", ok: false);
-                return;
+                if (string.IsNullOrEmpty(token))
+                {
+                    SetStatus("Enter a Plex token.", ok: false);
+                    return;
+                }
+                _store.SetPlex(server, token); // encrypts the token before persisting
             }
 
-            _store.SetPlex(server, token); // encrypts the token before persisting
+            // browser-helper settings: provisioned app id + token (optional) plus the dev-token
+            // fallback value + toggle. Persisted together.
+            var bhAppId    = BhAppIdBox.Text.Trim();
+            var bhToken    = ResolveBhToken();
+            var bhDevToken = BhDevTokenBox.Text.Trim();
+            var bhFallback = BhDevFallbackCheck.IsChecked == true;
+            _store.SetBrowserHelper(bhAppId, bhToken, bhDevToken, bhFallback);
+
             DialogResult = true;
             Close();
         }

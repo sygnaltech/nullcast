@@ -11,7 +11,7 @@
     <Product>Nullcast</Product>
     <AssemblyTitle>Nullcast</AssemblyTitle>
     <Description>Nullcast — a lightweight, client-side Windows video player.</Description>
-    <Version>0.2.26</Version>
+    <Version>0.2.27</Version>
   </PropertyGroup>
 
   <ItemGroup>

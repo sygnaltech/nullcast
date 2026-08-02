@@ -73,5 +73,52 @@ namespace VideoPlayer.Services
             _config.Plex = null;
             Save();
         }
+
+        // ── browser-helper (live-cookie broker) ──────────────
+
+        /// <summary>The configured browser-helper app id, or "" if none.</summary>
+        public string BrowserHelperAppId => _config.BrowserHelper?.AppId ?? "";
+
+        /// <summary>Decrypts and returns the stored browser-helper token, or "" if unset/undecryptable.</summary>
+        public string GetBrowserHelperToken() =>
+            SecretProtector.Unprotect(_config.BrowserHelper?.TokenEncrypted) ?? "";
+
+        /// <summary>True when a provisioned app id + token are both present (else use the dev token).</summary>
+        public bool HasBrowserHelperCreds =>
+            !string.IsNullOrWhiteSpace(BrowserHelperAppId) && !string.IsNullOrEmpty(GetBrowserHelperToken());
+
+        /// <summary>The dev token used as a fallback — the configured one, or the built-in default.</summary>
+        public string BrowserHelperDevToken =>
+            string.IsNullOrWhiteSpace(_config.BrowserHelper?.DevToken)
+                ? DefaultDevToken
+                : _config.BrowserHelper.DevToken;
+
+        /// <summary>Whether the dev-token fallback is enabled (default on).</summary>
+        public bool BrowserHelperDevTokenFallback => _config.BrowserHelper?.DevTokenFallback ?? true;
+
+        /// <summary>The built-in M1 dev token (used when none is configured).</summary>
+        public const string DefaultDevToken = "dev-token-browser-helper";
+
+        /// <summary>
+        /// Store the browser-helper settings: provisioned app id + token (encrypted), the dev-token
+        /// fallback value ("" → built-in default), and whether the dev-token fallback is enabled.
+        /// </summary>
+        public void SetBrowserHelper(string appId, string rawToken, string devToken, bool devTokenFallback)
+        {
+            _config.BrowserHelper ??= new BrowserHelperConfig();
+            _config.BrowserHelper.AppId            = (appId ?? "").Trim();
+            _config.BrowserHelper.TokenEncrypted   = SecretProtector.Protect(rawToken?.Trim());
+            // Store "" when it matches the built-in default so we don't pin a stale copy.
+            var dt = (devToken ?? "").Trim();
+            _config.BrowserHelper.DevToken         = dt == DefaultDevToken ? "" : dt;
+            _config.BrowserHelper.DevTokenFallback = devTokenFallback;
+            Save();
+        }
+
+        public void ClearBrowserHelper()
+        {
+            _config.BrowserHelper = null;
+            Save();
+        }
     }
 }

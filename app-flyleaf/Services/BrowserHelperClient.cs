@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -21,9 +23,36 @@ namespace VideoPlayer.Services
     /// </summary>
     public class BrowserHelperClient
     {
-        // M1 dev credentials (browser-helper hardcodes these until its M3 per-app token registry).
-        private const string AppId    = "nullcast";
-        private const string DevToken = "dev-token-browser-helper";
+        // M1 dev credentials — the grace-period fallback used when no per-app credential is
+        // configured. Once the user enters a provisioned app id + token (Services settings),
+        // those take precedence (browser-helper M3 per-app auth).
+        private const string FallbackAppId = "nullcast";
+        private const string FallbackToken = "dev-token-browser-helper";
+
+        private readonly ServicesStore _store;
+
+        public BrowserHelperClient(ServicesStore store) => _store = store;
+
+        /// <summary>Provisioned (appId, token) if configured, else the M1 dev credentials.</summary>
+        /// <summary>
+        /// Credential attempts in priority order: the provisioned (appId, token) if configured,
+        /// then the M1 dev token as a fallback. Any request that fails auth falls through to the next.
+        /// </summary>
+        private List<(string appId, string token)> CredentialAttempts()
+        {
+            var list = new List<(string, string)>();
+            if (_store != null && _store.HasBrowserHelperCreds)
+                list.Add((_store.BrowserHelperAppId, _store.GetBrowserHelperToken()));
+
+            // Dev-token fallback — only when enabled (default on). Uses the configured dev token
+            // or the built-in default.
+            if (_store == null)
+                list.Add((FallbackAppId, FallbackToken));
+            else if (_store.BrowserHelperDevTokenFallback)
+                list.Add((FallbackAppId, _store.BrowserHelperDevToken));
+
+            return list;
+        }
 
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(5) };
 
@@ -44,28 +73,40 @@ namespace VideoPlayer.Services
             var port = ReadPort();
             if (port is null) return null;
 
-            try
+            var url = $"http://127.0.0.1:{port}/v1/cookies?domain={Uri.EscapeDataString(domains)}&format=netscape";
+
+            foreach (var (appId, token) in CredentialAttempts())
             {
-                var url = $"http://127.0.0.1:{port}/v1/cookies?domain={Uri.EscapeDataString(domains)}&format=netscape";
-                using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {DevToken}");
-                req.Headers.TryAddWithoutValidation("X-Browser-Helper-App", AppId);
+                try
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                    req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+                    req.Headers.TryAddWithoutValidation("X-Browser-Helper-App", appId);
 
-                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode) return null; // 404 = domain not shared, etc.
+                    using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                    // Auth failures fall through to the next credential (provisioned → dev token).
+                    if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized
+                                        or System.Net.HttpStatusCode.Forbidden)
+                        continue;
+                    if (!resp.IsSuccessStatusCode) return null; // 404 not shared etc. — nothing to fall back to
 
-                var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(body)) return null;
+                    var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    if (string.IsNullOrWhiteSpace(body)) return null;
 
-                var tmp = Path.Combine(Path.GetTempPath(), "nullcast-bh-cookies.txt");
-                await File.WriteAllTextAsync(tmp, body).ConfigureAwait(false);
-                return tmp;
+                    // Per-domain temp file so concurrent fetches for different sites don't clobber.
+                    var safe = new string((domains ?? "").Where(char.IsLetterOrDigit).ToArray());
+                    if (safe.Length == 0) safe = "cookies";
+                    var tmp = Path.Combine(Path.GetTempPath(), $"nullcast-bh-{safe}.txt");
+                    await File.WriteAllTextAsync(tmp, body).ConfigureAwait(false);
+                    return tmp;
+                }
+                catch (Exception ex)
+                {
+                    App.Log($"[browser-helper] fetch failed: {ex.Message}");
+                    return null;
+                }
             }
-            catch (Exception ex)
-            {
-                App.Log($"[browser-helper] fetch failed: {ex.Message}");
-                return null;
-            }
+            return null;
         }
 
         private int? ReadPort()

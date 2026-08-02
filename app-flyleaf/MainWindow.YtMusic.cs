@@ -38,7 +38,7 @@ namespace VideoPlayer
         private void EnterYtMusicTab()
         {
             _ytmusic       ??= new YtMusicService((args, url, useCookies) => RunYtDlp(args, url, useCookies));
-            _browserHelper ??= new BrowserHelperClient();
+            _browserHelper ??= new BrowserHelperClient(_services);
             // Cookie source prefers live browser-helper cookies, else the manually loaded file.
             _ytMusicApi    ??= new YtMusicInnerTube(() => _liveCookiePath ?? _settings.CookieFilePath);
 

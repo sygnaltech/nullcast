@@ -485,6 +485,8 @@ namespace VideoPlayer
 
             _services.Load();
             _plex = new PlexService(_services);
+            // App-wide live-cookie broker client (shared by every player type, not just YT Music).
+            _browserHelper = new BrowserHelperClient(_services);
             UpdatePlexTabState();
 
             await LoadSettingsAsync();
@@ -2034,8 +2036,12 @@ namespace VideoPlayer
                 ? "bestaudio/best"
                 : $"best[height<={_selectedHeight}]/bv*[height<={_selectedHeight}]+ba/best";
 
-            var titleTask  = RunYtDlp("--no-warnings --print \"%(title)s\"", url, cookieOverride);
-            var streamTask = RunYtDlp($"--no-warnings -f \"{fmt}\" -g", url, cookieOverride);
+            // Resolve the cookie file once for this URL (browser-helper live cookies for the site,
+            // manual export as fallback, none for YouTube). Shared by both yt-dlp calls.
+            var cookieFile = await ResolveCookieFileForUrlAsync(url, cookieOverride);
+
+            var titleTask  = RunYtDlp("--no-warnings --print \"%(title)s\"", url, cookieFile: cookieFile);
+            var streamTask = RunYtDlp($"--no-warnings -f \"{fmt}\" -g", url, cookieFile: cookieFile);
             await Task.WhenAll(titleTask, streamTask);
 
             var title = FirstLine(titleTask.Result);
@@ -2049,6 +2055,52 @@ namespace VideoPlayer
             var videoUrl = urls.Count > 0 ? urls[0] : null;
             var audioUrl = urls.Count > 1 ? urls[1] : null;
             return (title, videoUrl, audioUrl);
+        }
+
+        /// <summary>
+        /// Picks the cookie file yt-dlp should use for playing <paramref name="url"/>, available to
+        /// EVERY player type (Facebook, TikTok, …): live cookies pulled from the browser-helper broker
+        /// for the site's registrable domain, falling back to the manually exported cookies.txt.
+        /// Returns "" for no cookies. YouTube is deliberately excluded — valid YouTube cookies trigger
+        /// YouTube's SABR-only experiment which strips the direct stream URLs yt-dlp needs.
+        /// </summary>
+        private async Task<string> ResolveCookieFileForUrlAsync(string url, bool? cookieOverride)
+        {
+            if (cookieOverride == false) return "";
+
+            var host = TryGetHost(url);
+            if (IsYouTubeHost(host)) return "";
+
+            if (_browserHelper?.IsInstalled == true && !string.IsNullOrEmpty(host))
+            {
+                var live = await _browserHelper.FetchCookiesFileAsync(RegistrableDomain(host));
+                if (!string.IsNullOrEmpty(live)) return live;
+            }
+
+            var file = _settings.CookieFilePath;
+            return !string.IsNullOrWhiteSpace(file) && File.Exists(file) ? file : "";
+        }
+
+        private static string TryGetHost(string url) =>
+            Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host.ToLowerInvariant() : null;
+
+        private static bool IsYouTubeHost(string host) =>
+            !string.IsNullOrEmpty(host) &&
+            (host.EndsWith("youtube.com", StringComparison.Ordinal) ||
+             host == "youtu.be" || host.EndsWith(".youtu.be", StringComparison.Ordinal) ||
+             host.EndsWith("googlevideo.com", StringComparison.Ordinal));
+
+        /// <summary>Registrable domain (eTLD+1) approximation — matches browser-helper's share key.</summary>
+        private static string RegistrableDomain(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return "";
+            var parts = host.Split('.');
+            if (parts.Length <= 2) return host;
+            string[] twoLabel = { "co.uk", "com.au", "co.nz", "co.jp", "com.br", "co.za" };
+            var lastTwo = $"{parts[^2]}.{parts[^1]}";
+            return Array.IndexOf(twoLabel, lastTwo) >= 0 && parts.Length >= 3
+                ? $"{parts[^3]}.{parts[^2]}.{parts[^1]}"
+                : lastTwo;
         }
 
         /// <summary>
@@ -2084,9 +2136,17 @@ namespace VideoPlayer
         ///         and would otherwise fail when the browser holds a lock on its cookie DB).
         /// true → send cookies if a browser is configured, regardless of the global toggle.
         /// </param>
-        private async Task<string> RunYtDlp(string arguments, string url, bool? cookieOverride = null)
+        /// <param name="cookieFile">
+        /// When non-null it is the authoritative cookie decision for this call: "" → send no
+        /// cookies; a path → <c>--cookies "&lt;path&gt;"</c>. When null, fall back to the setting-based
+        /// <see cref="ResolveCookieArgs"/>. (Playback resolves a per-URL file first, via browser-helper.)
+        /// </param>
+        private async Task<string> RunYtDlp(string arguments, string url, bool? cookieOverride = null,
+                                            string cookieFile = null)
         {
-            var cookies = ResolveCookieArgs(cookieOverride);
+            var cookies = cookieFile != null
+                ? (cookieFile.Length == 0 ? "" : $"--cookies \"{cookieFile}\" ")
+                : ResolveCookieArgs(cookieOverride);
 
             var process = new Process
             {
