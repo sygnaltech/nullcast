@@ -441,6 +441,17 @@ namespace VideoPlayer
 
                             case Status.Ended:
                                 PlayPauseButton.Content = "▶";
+
+                                // Repeat-One loops the current media in place — seek back and
+                                // replay rather than re-opening (which would resume from the
+                                // just-saved end position and loop instantly). Covers every source.
+                                if (_repeatMode == RepeatMode.One && _player != null)
+                                {
+                                    _player.SeekAccurate(0);
+                                    _player.Play();
+                                    break;
+                                }
+
                                 if (_activePlex != null && _plex != null)
                                 {
                                     // Report final position so Plex marks it watched/resumable.
@@ -467,6 +478,11 @@ namespace VideoPlayer
                                     if (_selectedWorkspace != null)
                                         _ = RefreshBookmarksAsync(_selectedWorkspace.Id);
                                 }
+
+                                // Repeat-one / shuffle / auto-advance for the flat queue
+                                // (playlist bookmarks, YouTube Music, podcasts). Plex handles
+                                // its own advance above.
+                                await HandleFlatTrackEndedAsync();
                                 break;
                         }
                     });
@@ -492,6 +508,9 @@ namespace VideoPlayer
             await LoadSettingsAsync();
             CookiesMenuItem.IsChecked = _settings.UseBrowserCookies;
             AutoPlayNextMenuItem.IsChecked = _settings.AutoPlayNextEpisode;
+            _shuffle    = _settings.Shuffle;
+            _repeatMode = (RepeatMode)Math.Clamp(_settings.RepeatMode, 0, 2);
+            RefreshTransportToggles();
             UpdateCookieFileMenuState();
             ApplyPlexViewMode();   // restore the remembered Plex list/tile view
 
@@ -1486,6 +1505,10 @@ namespace VideoPlayer
             _activePlex = item;
             _plexTimelineTick = 0;
 
+            // Transport Next/Prev bridge to Plex's own episode queue; the flat queue is inactive.
+            _queueKind    = QueueKind.Plex;
+            _queueListBox = null;
+
             // A new item is starting — drop any pending end-of-episode countdown, then work out
             // the queue we're walking so we can auto-advance when this one ends. Prefer an
             // already-established queue (so auto-advance keeps going even if the user has browsed
@@ -1672,6 +1695,7 @@ namespace VideoPlayer
 
         private async void PodcastResultsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_navigatingQueue) return;   // Next/Prev drives selection itself; don't re-capture
             if (e.AddedItems.Count == 0) return;
             var selected = PodcastResultsBox.SelectedItem;
 
@@ -1679,10 +1703,18 @@ namespace VideoPlayer
                 await LoadPodcastEpisodes(show);
             else if (selected is PodcastEpisode episode)
             {
-                _activeMuid = null;      // podcasts aren't bookmarks — don't save position server-side
-                _seekOnPlay = null;
-                await PlayUrl(episode.AudioUrl, episode.Title, forceDirect: true);
+                var eps = PodcastItems.OfType<PodcastEpisode>().Cast<object>().ToList();
+                SetFlatQueue(eps, eps.IndexOf(episode), PodcastResultsBox);
+                await PlayPodcastEpisodeAsync(episode);
             }
+        }
+
+        private async Task PlayPodcastEpisodeAsync(PodcastEpisode episode)
+        {
+            _activeMuid = null;      // podcasts aren't bookmarks — don't save position server-side
+            _activePlex = null;
+            _seekOnPlay = null;
+            await PlayUrl(episode.AudioUrl, episode.Title, forceDirect: true);
         }
 
         private async Task LoadPodcastEpisodes(PodcastShow show)
@@ -1764,13 +1796,19 @@ namespace VideoPlayer
 
         private async void PlaylistBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_navigatingQueue) return;   // Next/Prev drives selection itself; don't re-capture
             if (e.AddedItems.Count == 0 || _api == null) return;
             if (PlaylistBox.SelectedItem is Bookmark bookmark)
+            {
+                SetFlatQueue(PlaylistItems.Cast<object>().ToList(),
+                             PlaylistItems.IndexOf(bookmark), PlaylistBox);
                 await PlayBookmark(bookmark);
+            }
         }
 
         private async Task PlayBookmark(Bookmark bookmark)
         {
+            _activePlex        = null;   // a bookmark is playing — detach from the Plex path
             _activeMuid        = bookmark.Muid;
             _positionSaveTick  = 0;
             _seekOnPlay        = null;
@@ -1884,6 +1922,7 @@ namespace VideoPlayer
             {
                 _activeMuid = null;
                 _seekOnPlay = null;
+                _queueKind  = QueueKind.None;   // an ad-hoc URL isn't part of any queue
                 await PlayUrl(dialog.Url);
             }
         }
@@ -1933,6 +1972,7 @@ namespace VideoPlayer
             _settings.AutoPlayNextEpisode = AutoPlayNextMenuItem.IsChecked;
             if (!_settings.AutoPlayNextEpisode) CancelNextEpisodeCountdown();
             SaveSettings();
+            RefreshTransportToggles();
         }
 
         // Direct-media / local file extensions that FFmpeg can open without yt-dlp.

@@ -178,6 +178,7 @@ namespace VideoPlayer
 
         private async void YtMusicResultsBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_navigatingQueue) return;   // Next/Prev drives selection itself; don't re-capture
             if (e.AddedItems.Count == 0) return;
             if (YtMusicResultsBox.SelectedItem is not YtMusicItem item) return;
 
@@ -187,11 +188,22 @@ namespace VideoPlayer
                 return;
             }
 
-            // Play a track through the yt-dlp path — audio-first, and crucially COOKIE-FREE:
-            // valid YouTube cookies trigger the SABR-only experiment that strips stream URLs, so
-            // playback must be unauthenticated (public) even though the library needs auth.
-            // Detach from the bookmark / Plex save paths so neither position-reporting nor
-            // auto-play-next-episode misfires.
+            // Queue is the current track list (excluding any playlist rows), so Next/auto-advance
+            // walk the songs the user is looking at.
+            var tracks = YtMusicItems.Where(x => !x.IsPlaylist).Cast<object>().ToList();
+            SetFlatQueue(tracks, tracks.IndexOf(item), YtMusicResultsBox);
+            await PlayYtMusicTrackAsync(item);
+        }
+
+        /// <summary>
+        /// Play a single YT Music track through the yt-dlp path — audio-first, and crucially
+        /// COOKIE-FREE: valid YouTube cookies trigger the SABR-only experiment that strips stream
+        /// URLs, so playback must be unauthenticated (public) even though the library needs auth.
+        /// Detaches from the bookmark / Plex save paths so neither position-reporting nor
+        /// auto-play-next-episode misfires.
+        /// </summary>
+        private async Task PlayYtMusicTrackAsync(YtMusicItem item)
+        {
             _activeMuid = null;
             _activePlex = null;
             _seekOnPlay = null;

@@ -52,6 +52,22 @@ namespace VideoPlayer.Models
         public bool AutoPlayNextEpisode { get; set; } = true;
 
         /// <summary>
+        /// When true, the active play queue (playlist bookmarks, YouTube Music tracks, podcast
+        /// episodes) is walked in a randomized order by Next/auto-advance. Remembered across
+        /// sessions; toggled from the transport-bar shuffle button.
+        /// </summary>
+        [JsonPropertyName("shuffle")]
+        public bool Shuffle { get; set; }
+
+        /// <summary>
+        /// Repeat behaviour for the active queue: 0 = off, 1 = repeat all (wrap at the ends),
+        /// 2 = repeat one (loop the current track/episode). Remembered across sessions; cycled
+        /// from the transport-bar repeat button.
+        /// </summary>
+        [JsonPropertyName("repeat_mode")]
+        public int RepeatMode { get; set; }
+
+        /// <summary>
         /// YouTube Music playlists the user has pinned into the YT Music tab (by URL).
         /// Phase 1 has no library auto-enumeration, so pins + Liked Music are how playlists
         /// show up. Persisted across sessions.

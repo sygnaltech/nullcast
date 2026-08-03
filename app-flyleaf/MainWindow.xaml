@@ -1743,31 +1743,85 @@
             <!-- Top hairline -->
             <Border Grid.ColumnSpan="4" VerticalAlignment="Top" Height="1" Background="#0FFFFFFF"/>
 
-            <!-- Play/Pause Button (circular accent) -->
-            <Button x:Name="PlayPauseButton"
-                    Grid.Column="0"
-                    Content="▶"
-                    Width="52" Height="52"
-                    Margin="22,0,0,0"
-                    FontSize="17"
-                    Foreground="#0F1118"
-                    Click="PlayPause_Click">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="#7D97FF" CornerRadius="26">
-                            <Border.Effect>
-                                <DropShadowEffect Color="#7D97FF" BlurRadius="20" ShadowDepth="4" Opacity="0.35"/>
-                            </Border.Effect>
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#8FA6FF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
+            <!-- Transport: Previous · Play/Pause · Next -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal"
+                        VerticalAlignment="Center" Margin="16,0,0,0">
+
+                <!-- Previous track / restart -->
+                <Button x:Name="PrevButton"
+                        Click="PrevButton_Click"
+                        ToolTip="Previous (restart if &gt;3s in)"
+                        Width="40" Height="40" Background="Transparent" Cursor="Hand"
+                        VerticalAlignment="Center">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="20">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Viewbox Width="20" Height="20">
+                        <Canvas Width="24" Height="24">
+                            <Path Fill="#C7CBD6" Data="M7 5 H9 V19 H7 Z M18 5 L9 12 L18 19 Z"/>
+                        </Canvas>
+                    </Viewbox>
+                </Button>
+
+                <!-- Play/Pause Button (circular accent) -->
+                <Button x:Name="PlayPauseButton"
+                        Content="▶"
+                        Width="52" Height="52"
+                        Margin="6,0,6,0"
+                        FontSize="17"
+                        Foreground="#0F1118"
+                        Click="PlayPause_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="#7D97FF" CornerRadius="26">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#7D97FF" BlurRadius="20" ShadowDepth="4" Opacity="0.35"/>
+                                </Border.Effect>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#8FA6FF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Next track -->
+                <Button x:Name="NextButton"
+                        Click="NextButton_Click"
+                        ToolTip="Next"
+                        Width="40" Height="40" Background="Transparent" Cursor="Hand"
+                        VerticalAlignment="Center">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="20">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Viewbox Width="20" Height="20">
+                        <Canvas Width="24" Height="24">
+                            <Path Fill="#C7CBD6" Data="M15 5 H17 V19 H15 Z M6 5 L15 12 L6 19 Z"/>
+                        </Canvas>
+                    </Viewbox>
+                </Button>
+            </StackPanel>
 
             <!-- Progress Slider -->
             <Slider x:Name="ProgressSlider"
@@ -1792,6 +1846,86 @@
 
             <!-- Volume -->
             <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="16,0,22,0" VerticalAlignment="Center">
+
+                <!-- Queue behaviour: Shuffle · Repeat · Autoplay (state-coloured toggles) -->
+                <Button x:Name="ShuffleButton"
+                        Click="ShuffleButton_Click"
+                        ToolTip="Shuffle"
+                        Width="34" Height="28" Margin="0,0,2,0"
+                        Background="Transparent" Cursor="Hand" VerticalAlignment="Center">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Viewbox Width="18" Height="18">
+                        <Canvas Width="24" Height="24">
+                            <Path x:Name="ShuffleIcon" Stroke="#848B9F" StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  Data="M16 3 H21 V8 M4 20 L21 3 M21 16 V21 H16 M15 15 L21 21 M4 4 L9 9"/>
+                        </Canvas>
+                    </Viewbox>
+                </Button>
+
+                <Button x:Name="RepeatButton"
+                        Click="RepeatButton_Click"
+                        ToolTip="Repeat: off → all → one"
+                        Width="34" Height="28" Margin="0,0,2,0"
+                        Background="Transparent" Cursor="Hand" VerticalAlignment="Center">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Grid>
+                        <Viewbox Width="18" Height="18">
+                            <Canvas Width="24" Height="24">
+                                <Path x:Name="RepeatIcon" Stroke="#848B9F" StrokeThickness="1.8"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Data="M17 1 L21 5 L17 9 M3 11 V9 A4 4 0 0 1 7 5 H21 M7 23 L3 19 L7 15 M21 13 V15 A4 4 0 0 1 17 19 H3"/>
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock x:Name="RepeatOneBadge" Text="1" FontSize="9" FontWeight="Bold"
+                                   Foreground="#7D97FF" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="Collapsed"/>
+                    </Grid>
+                </Button>
+
+                <Button x:Name="AutoplayButton"
+                        Click="AutoplayButton_Click"
+                        ToolTip="Autoplay — continue to the next track/episode automatically"
+                        Width="34" Height="28" Margin="0,0,14,0"
+                        Background="Transparent" Cursor="Hand" VerticalAlignment="Center">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <TextBlock x:Name="AutoplayGlyph" Text="&#x221E;" FontSize="19"
+                               Foreground="#848B9F" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Button>
+
                 <!-- Playback speed (cycles 1x → 1.25x → 1.5x → 1.75x → 2x) -->
                 <Button x:Name="SpeedButton"
                         Content="1×"
