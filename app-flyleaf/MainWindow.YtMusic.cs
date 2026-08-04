@@ -24,11 +24,11 @@ namespace VideoPlayer
 
         private YtMusicService _ytmusic;
         private YtMusicInnerTube _ytMusicApi;
-        private BrowserHelperClient _browserHelper;
+        private TetherClient _tether;
         private bool _ytmusicLoaded;         // playlists view populated at least once
 
         /// <summary>
-        /// Fresh cookies.txt pulled from the browser-helper broker (live browser session), or null.
+        /// Fresh cookies.txt pulled from the Tether broker (live browser session), or null.
         /// Preferred over the manual <see cref="AppSettings.CookieFilePath"/> by both the InnerTube
         /// client and yt-dlp (<c>ResolveCookieArgs</c>), so auth uses always-current cookies.
         /// </summary>
@@ -37,28 +37,29 @@ namespace VideoPlayer
         /// <summary>Called when the YT Music tab is selected. Lazily builds the services + playlist view.</summary>
         private void EnterYtMusicTab()
         {
-            _ytmusic       ??= new YtMusicService((args, url, useCookies) => RunYtDlp(args, url, useCookies));
-            _browserHelper ??= new BrowserHelperClient(_services);
-            // Cookie source prefers live browser-helper cookies, else the manually loaded file.
-            _ytMusicApi    ??= new YtMusicInnerTube(() => _liveCookiePath ?? _settings.CookieFilePath);
+            _ytmusic    ??= new YtMusicService((args, url, useCookies) => RunYtDlp(args, url, useCookies));
+            _tether     ??= new TetherClient(_services);
+            // Cookie source prefers live Tether cookies, else the manually loaded file.
+            _ytMusicApi ??= new YtMusicInnerTube(() => _liveCookiePath ?? _settings.CookieFilePath);
 
             if (!_ytmusicLoaded)
                 _ = ShowYtMusicPlaylistsAsync();
         }
 
         /// <summary>
-        /// Best-effort refresh of <see cref="_liveCookiePath"/> from the browser-helper broker.
-        /// Silent no-op if the broker isn't installed/running or hasn't shared youtube.com — in
-        /// which case the manual cookies.txt remains the source.
+        /// Best-effort refresh of <see cref="_liveCookiePath"/> from the Tether broker.
+        /// Silent no-op if the broker isn't installed/running or hasn't shared the YouTube domains —
+        /// in which case the manual cookies.txt remains the source. YouTube auth spans both
+        /// youtube.com and google.com, so request both (per Tether's multi-domain guidance).
         /// </summary>
         private async Task RefreshLiveCookiesAsync()
         {
-            if (_browserHelper?.IsInstalled != true) return;
-            var path = await _browserHelper.FetchCookiesFileAsync("youtube.com");
+            if (_tether?.IsInstalled != true) return;
+            var path = await _tether.FetchCookiesFileAsync("youtube.com,google.com");
             if (!string.IsNullOrEmpty(path))
             {
                 _liveCookiePath = path;
-                App.Log("[YTMusic] Using live cookies from browser-helper.");
+                App.Log("[YTMusic] Using live cookies from Tether.");
             }
         }
 

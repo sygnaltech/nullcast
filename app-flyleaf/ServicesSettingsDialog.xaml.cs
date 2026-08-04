@@ -16,8 +16,8 @@ namespace VideoPlayer
 
         private readonly ServicesStore _store;
         private bool _loading;        // guards programmatic edits during load
-        private bool _tokenTouched;   // true once the user edits the Plex token field
-        private bool _bhTokenTouched; // true once the user edits the browser-helper key field
+        private bool _tokenTouched;       // true once the user edits the Plex token field
+        private bool _tetherTokenTouched; // true once the user edits the Tether key field
         private readonly bool _hadExistingToken;
 
         public ServicesSettingsDialog(ServicesStore store)
@@ -33,12 +33,12 @@ namespace VideoPlayer
             if (_hadExistingToken)
                 TokenBox.Password = TokenSentinel; // show masked, don't reveal the real token
 
-            // browser-helper credentials.
-            BhAppIdBox.Text = _store.BrowserHelperAppId;
-            if (_store.HasBrowserHelperCreds)
-                BhTokenBox.Password = TokenSentinel;
-            BhDevTokenBox.Text = _store.BrowserHelperDevToken;
-            BhDevFallbackCheck.IsChecked = _store.BrowserHelperDevTokenFallback;
+            // Tether credentials.
+            TetherAppIdBox.Text = _store.TetherAppId;
+            if (_store.HasTetherCreds)
+                TetherTokenBox.Password = TokenSentinel;
+            TetherDevTokenBox.Text = _store.TetherDevToken;
+            TetherDevFallbackCheck.IsChecked = _store.TetherDevTokenFallback;
             _loading = false;
 
             UpdateServerPlaceholder();
@@ -61,15 +61,15 @@ namespace VideoPlayer
         private string ResolveToken() =>
             _tokenTouched ? TokenBox.Password : _store.GetPlexToken();
 
-        private void BhTokenBox_PasswordChanged(object sender, RoutedEventArgs e)
+        private void TetherTokenBox_PasswordChanged(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
-            _bhTokenTouched = true;
+            _tetherTokenTouched = true;
         }
 
-        /// <summary>The browser-helper key: freshly-typed one, or the stored one if untouched.</summary>
-        private string ResolveBhToken() =>
-            _bhTokenTouched ? BhTokenBox.Password : _store.GetBrowserHelperToken();
+        /// <summary>The Tether key: freshly-typed one, or the stored one if untouched.</summary>
+        private string ResolveTetherToken() =>
+            _tetherTokenTouched ? TetherTokenBox.Password : _store.GetTetherToken();
 
         private async void Test_Click(object sender, RoutedEventArgs e)
         {
@@ -98,13 +98,13 @@ namespace VideoPlayer
                 _store.SetPlex(server, token); // encrypts the token before persisting
             }
 
-            // browser-helper settings: provisioned app id + token (optional) plus the dev-token
+            // Tether settings: provisioned app id + token (optional) plus the dev-token
             // fallback value + toggle. Persisted together.
-            var bhAppId    = BhAppIdBox.Text.Trim();
-            var bhToken    = ResolveBhToken();
-            var bhDevToken = BhDevTokenBox.Text.Trim();
-            var bhFallback = BhDevFallbackCheck.IsChecked == true;
-            _store.SetBrowserHelper(bhAppId, bhToken, bhDevToken, bhFallback);
+            var tetherAppId    = TetherAppIdBox.Text.Trim();
+            var tetherToken    = ResolveTetherToken();
+            var tetherDevToken = TetherDevTokenBox.Text.Trim();
+            var tetherFallback = TetherDevFallbackCheck.IsChecked == true;
+            _store.SetTether(tetherAppId, tetherToken, tetherDevToken, tetherFallback);
 
             DialogResult = true;
             Close();

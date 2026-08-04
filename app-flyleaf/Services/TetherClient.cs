@@ -9,31 +9,30 @@ using System.Threading.Tasks;
 namespace VideoPlayer.Services
 {
     /// <summary>
-    /// Client for the local <c>browser-helper</c> broker — a tray service that hands out the user's
+    /// Client for the local <c>Tether</c> broker — a tray service that hands out the user's
     /// LIVE browser cookies (via a browser extension) for user-approved sites. This solves the
     /// cookie-freshness problem that kills exported cookies.txt: the broker's cookies are always
     /// current (the extension pushes on every change), including the HttpOnly session cookies.
     ///
-    /// Contract (browser-helper docs/protocol.md): discover the port from
-    /// <c>%APPDATA%\browser-helper\endpoint.json</c>, then
+    /// Contract (Tether INTEGRATION.md): discover the port from
+    /// <c>%APPDATA%\tether\endpoint.json</c>, then
     /// <c>GET http://127.0.0.1:&lt;port&gt;/v1/cookies?domain=…&amp;format=netscape</c> with a Bearer
-    /// token + <c>X-Browser-Helper-App</c> header. Loopback only. Everything here is best-effort:
+    /// token + <c>X-Tether-App</c> header. Loopback only. Everything here is best-effort:
     /// if the broker is down or a domain isn't shared, we return null and callers fall back to the
     /// manual cookies.txt path.
     /// </summary>
-    public class BrowserHelperClient
+    public class TetherClient
     {
         // M1 dev credentials — the grace-period fallback used when no per-app credential is
         // configured. Once the user enters a provisioned app id + token (Services settings),
-        // those take precedence (browser-helper M3 per-app auth).
+        // those take precedence (Tether M3 per-app auth).
         private const string FallbackAppId = "nullcast";
-        private const string FallbackToken = "dev-token-browser-helper";
+        private const string FallbackToken = "dev-token-tether";
 
         private readonly ServicesStore _store;
 
-        public BrowserHelperClient(ServicesStore store) => _store = store;
+        public TetherClient(ServicesStore store) => _store = store;
 
-        /// <summary>Provisioned (appId, token) if configured, else the M1 dev credentials.</summary>
         /// <summary>
         /// Credential attempts in priority order: the provisioned (appId, token) if configured,
         /// then the M1 dev token as a fallback. Any request that fails auth falls through to the next.
@@ -41,15 +40,15 @@ namespace VideoPlayer.Services
         private List<(string appId, string token)> CredentialAttempts()
         {
             var list = new List<(string, string)>();
-            if (_store != null && _store.HasBrowserHelperCreds)
-                list.Add((_store.BrowserHelperAppId, _store.GetBrowserHelperToken()));
+            if (_store != null && _store.HasTetherCreds)
+                list.Add((_store.TetherAppId, _store.GetTetherToken()));
 
             // Dev-token fallback — only when enabled (default on). Uses the configured dev token
             // or the built-in default.
             if (_store == null)
                 list.Add((FallbackAppId, FallbackToken));
-            else if (_store.BrowserHelperDevTokenFallback)
-                list.Add((FallbackAppId, _store.BrowserHelperDevToken));
+            else if (_store.TetherDevTokenFallback)
+                list.Add((FallbackAppId, _store.TetherDevToken));
 
             return list;
         }
@@ -58,7 +57,7 @@ namespace VideoPlayer.Services
 
         private static string EndpointFile => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "browser-helper", "endpoint.json");
+            "tether", "endpoint.json");
 
         /// <summary>True when the broker's endpoint file exists (it may still be offline).</summary>
         public bool IsInstalled => File.Exists(EndpointFile);
@@ -81,7 +80,7 @@ namespace VideoPlayer.Services
                 {
                     using var req = new HttpRequestMessage(HttpMethod.Get, url);
                     req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
-                    req.Headers.TryAddWithoutValidation("X-Browser-Helper-App", appId);
+                    req.Headers.TryAddWithoutValidation("X-Tether-App", appId);
 
                     using var resp = await _http.SendAsync(req).ConfigureAwait(false);
                     // Auth failures fall through to the next credential (provisioned → dev token).
@@ -96,13 +95,13 @@ namespace VideoPlayer.Services
                     // Per-domain temp file so concurrent fetches for different sites don't clobber.
                     var safe = new string((domains ?? "").Where(char.IsLetterOrDigit).ToArray());
                     if (safe.Length == 0) safe = "cookies";
-                    var tmp = Path.Combine(Path.GetTempPath(), $"nullcast-bh-{safe}.txt");
+                    var tmp = Path.Combine(Path.GetTempPath(), $"nullcast-tether-{safe}.txt");
                     await File.WriteAllTextAsync(tmp, body).ConfigureAwait(false);
                     return tmp;
                 }
                 catch (Exception ex)
                 {
-                    App.Log($"[browser-helper] fetch failed: {ex.Message}");
+                    App.Log($"[tether] fetch failed: {ex.Message}");
                     return null;
                 }
             }

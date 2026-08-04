@@ -140,7 +140,7 @@
             <RowDefinition Height="Auto"/>  <!-- 3 token label -->
             <RowDefinition Height="Auto"/>  <!-- 4 token box -->
             <RowDefinition Height="Auto"/>  <!-- 5 test row -->
-            <RowDefinition Height="Auto"/>  <!-- 6 browser-helper header -->
+            <RowDefinition Height="Auto"/>  <!-- 6 Tether header -->
             <RowDefinition Height="Auto"/>  <!-- 7 app id label -->
             <RowDefinition Height="Auto"/>  <!-- 8 app id box -->
             <RowDefinition Height="Auto"/>  <!-- 9 key label -->
@@ -181,26 +181,26 @@
                        FontSize="12" Foreground="#848B9F" TextWrapping="Wrap"/>
         </Grid>
 
-        <!-- ── browser-helper (live cookie broker) ── -->
+        <!-- ── Tether (live cookie broker) ── -->
         <StackPanel Grid.Row="6" Margin="0,26,0,0">
             <Border Height="1" Background="#1AFFFFFF" Margin="0,0,0,16"/>
-            <TextBlock Text="browser-helper (live cookies)" FontSize="17" FontWeight="SemiBold" Foreground="#EEF1FB"/>
-            <TextBlock Text="Provisioned app credential from the broker's “Register app…”. Used by every player to pull live cookies. Leave blank to use the built-in dev token."
+            <TextBlock Text="Tether (live cookies)" FontSize="17" FontWeight="SemiBold" Foreground="#EEF1FB"/>
+            <TextBlock Text="Provisioned app credential from Tether's “Register app…”. Used by every player to pull live cookies. Leave blank to use the built-in dev token."
                        FontSize="11" Foreground="#848B9F" TextWrapping="Wrap" Margin="0,6,0,0"/>
         </StackPanel>
 
         <TextBlock Grid.Row="7" Text="App ID" FontSize="12" Foreground="#848B9F" Margin="2,14,0,6"/>
-        <TextBox Grid.Row="8" x:Name="BhAppIdBox" Style="{StaticResource DarkTextBox}"/>
+        <TextBox Grid.Row="8" x:Name="TetherAppIdBox" Style="{StaticResource DarkTextBox}"/>
 
         <TextBlock Grid.Row="9" Text="Key (token)" FontSize="12" Foreground="#848B9F" Margin="2,14,0,6"/>
-        <PasswordBox Grid.Row="10" x:Name="BhTokenBox" Style="{StaticResource DarkPasswordBox}"
-                     PasswordChanged="BhTokenBox_PasswordChanged"/>
+        <PasswordBox Grid.Row="10" x:Name="TetherTokenBox" Style="{StaticResource DarkPasswordBox}"
+                     PasswordChanged="TetherTokenBox_PasswordChanged"/>
 
         <!-- Dev token fallback -->
         <StackPanel Grid.Row="11">
             <TextBlock Text="Dev token (fallback)" FontSize="12" Foreground="#848B9F" Margin="2,14,0,6"/>
-            <TextBox x:Name="BhDevTokenBox" Style="{StaticResource DarkTextBox}"/>
-            <CheckBox x:Name="BhDevFallbackCheck" Content="Use dev token as a fallback"
+            <TextBox x:Name="TetherDevTokenBox" Style="{StaticResource DarkTextBox}"/>
+            <CheckBox x:Name="TetherDevFallbackCheck" Content="Use dev token as a fallback"
                       Foreground="#B7BCCB" FontSize="12" Margin="2,12,0,0"/>
         </StackPanel>
 

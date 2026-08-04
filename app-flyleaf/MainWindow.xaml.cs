@@ -502,7 +502,7 @@ namespace VideoPlayer
             _services.Load();
             _plex = new PlexService(_services);
             // App-wide live-cookie broker client (shared by every player type, not just YT Music).
-            _browserHelper = new BrowserHelperClient(_services);
+            _tether = new TetherClient(_services);
             UpdatePlexTabState();
 
             await LoadSettingsAsync();
@@ -2076,7 +2076,7 @@ namespace VideoPlayer
                 ? "bestaudio/best"
                 : $"best[height<={_selectedHeight}]/bv*[height<={_selectedHeight}]+ba/best";
 
-            // Resolve the cookie file once for this URL (browser-helper live cookies for the site,
+            // Resolve the cookie file once for this URL (Tether live cookies for the site,
             // manual export as fallback, none for YouTube). Shared by both yt-dlp calls.
             var cookieFile = await ResolveCookieFileForUrlAsync(url, cookieOverride);
 
@@ -2099,7 +2099,7 @@ namespace VideoPlayer
 
         /// <summary>
         /// Picks the cookie file yt-dlp should use for playing <paramref name="url"/>, available to
-        /// EVERY player type (Facebook, TikTok, …): live cookies pulled from the browser-helper broker
+        /// EVERY player type (Facebook, TikTok, …): live cookies pulled from the Tether broker
         /// for the site's registrable domain, falling back to the manually exported cookies.txt.
         /// Returns "" for no cookies. YouTube is deliberately excluded — valid YouTube cookies trigger
         /// YouTube's SABR-only experiment which strips the direct stream URLs yt-dlp needs.
@@ -2111,9 +2111,9 @@ namespace VideoPlayer
             var host = TryGetHost(url);
             if (IsYouTubeHost(host)) return "";
 
-            if (_browserHelper?.IsInstalled == true && !string.IsNullOrEmpty(host))
+            if (_tether?.IsInstalled == true && !string.IsNullOrEmpty(host))
             {
-                var live = await _browserHelper.FetchCookiesFileAsync(RegistrableDomain(host));
+                var live = await _tether.FetchCookiesFileAsync(RegistrableDomain(host));
                 if (!string.IsNullOrEmpty(live)) return live;
             }
 
@@ -2130,7 +2130,7 @@ namespace VideoPlayer
              host == "youtu.be" || host.EndsWith(".youtu.be", StringComparison.Ordinal) ||
              host.EndsWith("googlevideo.com", StringComparison.Ordinal));
 
-        /// <summary>Registrable domain (eTLD+1) approximation — matches browser-helper's share key.</summary>
+        /// <summary>Registrable domain (eTLD+1) approximation — matches Tether's share key.</summary>
         private static string RegistrableDomain(string host)
         {
             if (string.IsNullOrEmpty(host)) return "";
@@ -2155,7 +2155,7 @@ namespace VideoPlayer
 
             // A manually exported cookies.txt (avoids the browser cookie-DB lock / app-bound
             // encryption that make --cookies-from-browser fail). NOTE: we deliberately do NOT feed
-            // the live browser-helper YouTube cookies here — valid YouTube auth cookies trigger
+            // the live Tether YouTube cookies here — valid YouTube auth cookies trigger
             // YouTube's SABR-only streaming experiment, which strips the direct stream URLs yt-dlp
             // needs. Live cookies are for the InnerTube library only; YT Music tracks play cookie-free.
             var file = _settings.CookieFilePath;
@@ -2179,7 +2179,7 @@ namespace VideoPlayer
         /// <param name="cookieFile">
         /// When non-null it is the authoritative cookie decision for this call: "" → send no
         /// cookies; a path → <c>--cookies "&lt;path&gt;"</c>. When null, fall back to the setting-based
-        /// <see cref="ResolveCookieArgs"/>. (Playback resolves a per-URL file first, via browser-helper.)
+        /// <see cref="ResolveCookieArgs"/>. (Playback resolves a per-URL file first, via Tether.)
         /// </param>
         private async Task<string> RunYtDlp(string arguments, string url, bool? cookieOverride = null,
                                             string cookieFile = null)

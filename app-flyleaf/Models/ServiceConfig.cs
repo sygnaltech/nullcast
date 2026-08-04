@@ -20,11 +20,11 @@ namespace VideoPlayer.Models
     }
 
     /// <summary>
-    /// Credentials linking this app to the local <c>browser-helper</c> broker (M3 per-app auth).
+    /// Credentials linking this app to the local <c>Tether</c> broker (M3 per-app auth).
     /// The <see cref="TokenEncrypted"/> key is DPAPI-protected at rest (see <c>SecretProtector</c>);
     /// <see cref="AppId"/> is not a secret. When unset, the client falls back to the M1 dev token.
     /// </summary>
-    public class BrowserHelperConfig
+    public class TetherConfig
     {
         [JsonPropertyName("app_id")]
         public string AppId { get; set; } = "";
@@ -50,7 +50,21 @@ namespace VideoPlayer.Models
         [JsonPropertyName("plex")]
         public PlexServerConfig? Plex { get; set; }
 
+        [JsonPropertyName("tether")]
+        public TetherConfig? Tether { get; set; }
+
+        /// <summary>
+        /// Back-compat: pre-rebrand builds stored these credentials under <c>browser_helper</c>.
+        /// Deserialize that legacy key into <see cref="Tether"/> when the new key is absent, so
+        /// existing saved credentials survive the rename. The getter is always null so we never
+        /// write the legacy key back out (config migrates forward on the next save).
+        /// </summary>
         [JsonPropertyName("browser_helper")]
-        public BrowserHelperConfig? BrowserHelper { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public TetherConfig? TetherLegacy
+        {
+            get => null;
+            set { if (value != null && Tether == null) Tether = value; }
+        }
     }
 }
