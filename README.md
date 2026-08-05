@@ -1,9 +1,9 @@
 # Nullcast
 
 **Nullcast** is a lightweight, client-side Windows video player built around the
-[Sygnal Playlist / bookmarks service](https://playlist-api.sygnal.com). It
+[Nullcast bookmarks service](https://nullcast-api.sygnal.com). It
 plays local files, direct URLs, and YouTube videos, and syncs playlists,
-bookmarks, and playback position against your Playlist workspaces.
+bookmarks, and playback position against your Nullcast workspaces.
 
 > **Windows only.** This is a native WPF desktop application and depends on
 > Windows-specific frameworks (WPF, Windows Forms, DWM, virtual-desktop COM

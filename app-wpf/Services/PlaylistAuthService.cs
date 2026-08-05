@@ -16,7 +16,7 @@ namespace VideoPlayer.Services
 {
     public class PlaylistAuthService
     {
-        private const string BaseUrl     = "https://playlist-api.sygnal.com";
+        private const string BaseUrl     = "https://nullcast-api.sygnal.com";
         private const string ClientId    = "video-player";
         private const string RedirectUri = "http://127.0.0.1:47891/callback";
         private const string Scopes      = "profile:read workspaces:read bookmarks:read bookmarks:write offline_access";
