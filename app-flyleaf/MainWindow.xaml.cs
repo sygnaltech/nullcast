@@ -16,6 +16,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using FlyleafLib;
 using FlyleafLib.MediaPlayer;
@@ -62,6 +63,12 @@ namespace VideoPlayer
         private bool            _controlsOverlayMode;
         private DispatcherTimer _cursorHideTimer;   // hides the pointer after idle in cinema fullscreen
         private bool            _cursorHidden;
+
+        // Right-edge sidebar overlay (cinema fullscreen only)
+        private bool            _sideOverlayActive;    // panel is popped out over the video
+        private DispatcherTimer _sideOverlayHideTimer; // collapses ~0.3s after the pointer leaves
+        private Grid            _sidePanelHome;         // SidePanel's normal grid parent (for restore)
+        private double          _sidePanelHomeWidth;    // SidePanel.Width to restore after the overlay
 
         // Playlist service
         private PlaylistAuthService _auth;
@@ -225,7 +232,16 @@ namespace VideoPlayer
             {
                 if (_controlsOverlayMode && OverlayControlsPopup.IsOpen)
                     PositionOverlayControls();
+                if (_sideOverlayActive)
+                    PositionSideOverlay();
             };
+
+            // Right-edge sidebar overlay: remember the panel's home so it can be
+            // re-parented into a floating popup during fullscreen and back again.
+            _sidePanelHome      = SidePanel.Parent as Grid;
+            _sidePanelHomeWidth = SidePanel.Width;
+            SidePanel.MouseEnter += SidePanel_MouseEnter;
+            SidePanel.MouseLeave += SidePanel_MouseLeave;
         }
 
         private async void InitializeYtDlp()
@@ -2648,6 +2664,7 @@ namespace VideoPlayer
         private void VideoArea_MouseMove(object sender, MouseEventArgs e)
         {
             NudgeCursorIdle();
+            MaybeTriggerSideOverlay(e);
             if (_controlsOverlayMode)
                 ShowOverlayControls();
         }
@@ -2697,6 +2714,7 @@ namespace VideoPlayer
         private void Window_MouseMove(object sender, MouseEventArgs e)
         {
             NudgeCursorIdle();
+            MaybeTriggerSideOverlay(e);
             if (_controlsOverlayMode)
                 ShowOverlayControls();
         }
@@ -2780,6 +2798,7 @@ namespace VideoPlayer
             {
                 _isFullscreen = false;
                 StopCursorHide();
+                HideSideOverlay();
                 TopBar.Visibility = Visibility.Visible;
                 WindowStyle = WindowStyle.SingleBorderWindow;
                 ResizeMode  = ResizeMode.CanResize;
@@ -2863,7 +2882,7 @@ namespace VideoPlayer
                 _cursorHideTimer.Tick += (s, _) =>
                 {
                     _cursorHideTimer.Stop();
-                    if (!_isFullscreen) return;
+                    if (!_isFullscreen || _sideOverlayActive) return;
                     Mouse.OverrideCursor = Cursors.None;
                     _cursorHidden = true;
                 };
@@ -2881,6 +2900,115 @@ namespace VideoPlayer
                 Mouse.OverrideCursor = null;
                 _cursorHidden = false;
             }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Right-edge sidebar overlay (cinema fullscreen only)
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// In cinema fullscreen, a pointer at the extreme right edge of the screen
+        /// pops the sidebar out over the video (no resize). No-op otherwise.
+        /// </summary>
+        private void MaybeTriggerSideOverlay(MouseEventArgs e)
+        {
+            if (!_isFullscreen || _sideOverlayActive) return;
+
+            var pos = e.GetPosition(this);
+            if (pos.X >= ActualWidth - 3 && pos.Y >= 0 && pos.Y <= ActualHeight)
+                ShowSideOverlay();
+        }
+
+        private void ShowSideOverlay()
+        {
+            if (_sideOverlayActive || _sidePanelHome == null) return;
+            _sideOverlayActive = true;
+
+            // Re-parent the docked SidePanel into the floating popup so it paints
+            // above the Flyleaf D3D surface (same trick as the controls overlay).
+            _sidePanelHomeWidth = SidePanel.Width;
+            if (_sidePanelHome.Children.Contains(SidePanel))
+                _sidePanelHome.Children.Remove(SidePanel);
+            OverlaySidePanelPopup.Child = SidePanel;
+
+            SidePanel.Visibility = Visibility.Visible;
+            PositionSideOverlay();
+            OverlaySidePanelPopup.IsOpen = true;
+
+            // Slide in from the right edge.
+            var slide = new TranslateTransform(SidePanel.Width, 0);
+            SidePanel.RenderTransform = slide;
+            slide.BeginAnimation(TranslateTransform.XProperty,
+                new DoubleAnimation(SidePanel.Width, 0, TimeSpan.FromMilliseconds(180))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                });
+        }
+
+        /// <summary>Anchors the overlay to the right edge, full video height.</summary>
+        private void PositionSideOverlay()
+        {
+            double w = VideoContainer.ActualWidth;
+            double h = VideoContainer.ActualHeight;
+            if (w <= 0 || h <= 0) return;
+
+            const double panelW = 366;
+            SidePanel.Width  = panelW;
+            SidePanel.Height = h;
+
+            OverlaySidePanelPopup.Width           = panelW;
+            OverlaySidePanelPopup.Height          = h;
+            OverlaySidePanelPopup.HorizontalOffset = Math.Max(0, w - panelW);
+            OverlaySidePanelPopup.VerticalOffset   = 0;
+        }
+
+        private void SidePanel_MouseEnter(object sender, MouseEventArgs e)
+        {
+            if (!_sideOverlayActive) return;
+            _sideOverlayHideTimer?.Stop();
+        }
+
+        private void SidePanel_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (!_sideOverlayActive) return;
+
+            if (_sideOverlayHideTimer == null)
+            {
+                _sideOverlayHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+                _sideOverlayHideTimer.Tick += (s, _) =>
+                {
+                    _sideOverlayHideTimer.Stop();
+                    // Guard: pointer may have slipped back over the panel.
+                    if (SidePanel.IsMouseOver) return;
+                    HideSideOverlay();
+                };
+            }
+            _sideOverlayHideTimer.Stop();
+            _sideOverlayHideTimer.Start();
+        }
+
+        /// <summary>Collapses the overlay and returns SidePanel to its grid column.</summary>
+        private void HideSideOverlay()
+        {
+            if (!_sideOverlayActive) return;
+            _sideOverlayActive = false;
+            _sideOverlayHideTimer?.Stop();
+
+            OverlaySidePanelPopup.IsOpen = false;
+            OverlaySidePanelPopup.Child  = null;
+
+            SidePanel.RenderTransform = null;
+            SidePanel.Height          = double.NaN;
+            SidePanel.Width           = _sidePanelHomeWidth;
+
+            if (_sidePanelHome != null && !_sidePanelHome.Children.Contains(SidePanel))
+            {
+                _sidePanelHome.Children.Add(SidePanel);
+                Grid.SetColumn(SidePanel, 0);
+            }
+
+            // Restore the docked-mode visibility (collapsed while in fullscreen).
+            UpdatePlaylistVisibility();
         }
 
         // ──────────────────────────────────────────────────────

@@ -1984,6 +1984,16 @@
                Focusable="False"
                PopupAnimation="Fade"/>
 
+        <!-- Right-edge sidebar overlay for cinema fullscreen. On a right-edge hover
+             the SidePanel is re-parented here (over the video, no resize) and back to
+             its grid column when the pointer leaves. Slides in via a TranslateTransform. -->
+        <Popup x:Name="OverlaySidePanelPopup"
+               PlacementTarget="{Binding ElementName=VideoContainer}"
+               Placement="Relative"
+               AllowsTransparency="True"
+               StaysOpen="True"
+               Focusable="False"/>
+
         <!-- ══════════════════════════════════════════════════════
              Ctrl+K global search palette. A top-level Popup (like the
              controls overlay above) so it paints over the Flyleaf D3D
