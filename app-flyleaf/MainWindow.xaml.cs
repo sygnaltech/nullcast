@@ -60,6 +60,8 @@ namespace VideoPlayer
         private DispatcherTimer _clickTimer;
         private DispatcherTimer _controlsHideTimer;
         private bool            _controlsOverlayMode;
+        private DispatcherTimer _cursorHideTimer;   // hides the pointer after idle in cinema fullscreen
+        private bool            _cursorHidden;
 
         // Playlist service
         private PlaylistAuthService _auth;
@@ -2645,6 +2647,7 @@ namespace VideoPlayer
 
         private void VideoArea_MouseMove(object sender, MouseEventArgs e)
         {
+            NudgeCursorIdle();
             if (_controlsOverlayMode)
                 ShowOverlayControls();
         }
@@ -2693,6 +2696,7 @@ namespace VideoPlayer
 
         private void Window_MouseMove(object sender, MouseEventArgs e)
         {
+            NudgeCursorIdle();
             if (_controlsOverlayMode)
                 ShowOverlayControls();
         }
@@ -2775,6 +2779,7 @@ namespace VideoPlayer
             if (_isFullscreen)
             {
                 _isFullscreen = false;
+                StopCursorHide();
                 TopBar.Visibility = Visibility.Visible;
                 WindowStyle = WindowStyle.SingleBorderWindow;
                 ResizeMode  = ResizeMode.CanResize;
@@ -2823,6 +2828,58 @@ namespace VideoPlayer
                 Top    = screen.Bounds.Top   * dpiY;
                 Width  = screen.Bounds.Width * dpiX;
                 Height = screen.Bounds.Height * dpiY;
+
+                // Arm the idle-cursor timer; the pointer hides after 3s of stillness.
+                NudgeCursorIdle();
+            }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Auto-hiding cursor (cinema fullscreen only)
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// In borderless fullscreen, hide the mouse pointer after 3 seconds of no
+        /// motion. Any movement restores it immediately and restarts the timer.
+        /// No-op outside fullscreen.
+        /// </summary>
+        private void NudgeCursorIdle()
+        {
+            if (!_isFullscreen)
+            {
+                StopCursorHide();
+                return;
+            }
+
+            if (_cursorHidden)
+            {
+                Mouse.OverrideCursor = null;
+                _cursorHidden = false;
+            }
+
+            if (_cursorHideTimer == null)
+            {
+                _cursorHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                _cursorHideTimer.Tick += (s, _) =>
+                {
+                    _cursorHideTimer.Stop();
+                    if (!_isFullscreen) return;
+                    Mouse.OverrideCursor = Cursors.None;
+                    _cursorHidden = true;
+                };
+            }
+            _cursorHideTimer.Stop();
+            _cursorHideTimer.Start();
+        }
+
+        /// <summary>Stops the idle timer and restores the pointer if it was hidden.</summary>
+        private void StopCursorHide()
+        {
+            _cursorHideTimer?.Stop();
+            if (_cursorHidden)
+            {
+                Mouse.OverrideCursor = null;
+                _cursorHidden = false;
             }
         }
 
