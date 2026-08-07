@@ -10,7 +10,7 @@ namespace VideoPlayer.Services
 {
     public class PlaylistApiService
     {
-        private const string BaseUrl = "https://nullcast-api.sygnal.com";
+        private const string BaseUrl = "https://nullcast.sygnal.com";
         private static readonly HttpClient _http = new();
 
         private readonly PlaylistAuthService _auth;
