@@ -1,0 +1,17 @@
+<UserControl x:Class="VideoPlayer.Controls.SourceBadge"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False"
+             SnapsToDevicePixels="True"
+             UseLayoutRounding="True">
+    <!-- Grid is sized to Size×Size in code-behind. The disc (brand colour, low alpha) sits
+         under the glyph (same brand colour, full strength). The glyph SVG never contains the
+         circle — it is drawn here, kept separate so the path can be swapped freely. -->
+    <Grid x:Name="Root">
+        <Ellipse x:Name="Disc" StrokeThickness="1"/>
+        <Viewbox x:Name="GlyphBox" Stretch="Uniform">
+            <!-- 24×24 authoring canvas; Path data comes from IntegrationSource. -->
+            <Path x:Name="Glyph" Width="24" Height="24"/>
+        </Viewbox>
+    </Grid>
+</UserControl>
