@@ -658,8 +658,9 @@
                       Visibility="{Binding HasLeadArt, Converter={StaticResource BoolToVisibility}}">
                     <Border CornerRadius="4" Background="#22000000" ClipToBounds="True"
                             Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
-                        <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
-                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <Image ctrl:AsyncImage.Url="{Binding ThumbUrl}" ctrl:AsyncImage.DecodeWidth="96"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="LowQuality"/>
                     </Border>
                     <Border Background="#CC0F1118" CornerRadius="3" Padding="4,1"
                             HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2"
@@ -715,8 +716,9 @@
                     <Grid>
                         <TextBlock Text="🎬" FontSize="34" Opacity="0.35"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
-                               RenderOptions.BitmapScalingMode="HighQuality"
+                        <Image ctrl:AsyncImage.Url="{Binding ThumbUrl}" ctrl:AsyncImage.DecodeWidth="200"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="LowQuality"
                                Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}"/>
                         <!-- Drill-in badge for shows/seasons -->
                         <Border Background="#B30F1118" CornerRadius="11" Width="22" Height="22"
@@ -2273,8 +2275,9 @@
                                                     Margin="0,0,11,0" Background="#22000000" ClipToBounds="True"
                                                     VerticalAlignment="Top"
                                                     Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
-                                                <Image Source="{Binding ThumbUrl, IsAsync=True}" Stretch="UniformToFill"
-                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <Image ctrl:AsyncImage.Url="{Binding ThumbUrl}" ctrl:AsyncImage.DecodeWidth="96"
+                                                       Stretch="UniformToFill"
+                                                       RenderOptions.BitmapScalingMode="LowQuality"/>
                                             </Border>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Title}"
