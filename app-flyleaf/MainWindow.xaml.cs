@@ -950,18 +950,28 @@ namespace VideoPlayer
             ApplyPlexViewMode();
         }
 
+        /// <summary>True when the current drill level is a season's episodes.</summary>
+        private bool PlexViewingEpisodes =>
+            !_plexSearchMode && _plexCurrentItems.Count > 0 && _plexCurrentItems.All(i => i.IsEpisode);
+
         /// <summary>Swaps the results ListBox between the tile grid and the compact list, and
-        /// reflects the active mode on the toolbar buttons. Safe to call before data loads.
-        /// Full-screen browse always renders as tiles.</summary>
+        /// reflects the active mode on the toolbar buttons. Idempotent and safe to call before
+        /// data loads (assignments are skipped when unchanged, so it can run on every render).
+        /// Episodes always use the lean image-free list; full-screen browse otherwise tiles.</summary>
         private void ApplyPlexViewMode()
         {
             if (PlexResultsBox == null) return;
 
-            bool tiles = _settings.PlexTileView || _plexFullscreen;
-            PlexResultsBox.ItemTemplate = (DataTemplate)FindResource(
-                tiles ? "PlexTileItemTemplate" : "PlexListItemTemplate");
-            PlexResultsBox.ItemsPanel = (ItemsPanelTemplate)FindResource(
-                tiles ? "PlexTilePanel" : "PlexListPanel");
+            bool episodes = PlexViewingEpisodes;
+            bool tiles    = !episodes && (_settings.PlexTileView || _plexFullscreen);
+
+            var tpl = (DataTemplate)FindResource(
+                episodes ? "PlexEpisodeItemTemplate"
+                         : tiles ? "PlexTileItemTemplate" : "PlexListItemTemplate");
+            var panel = (ItemsPanelTemplate)FindResource(tiles ? "PlexTilePanel" : "PlexListPanel");
+
+            if (!ReferenceEquals(PlexResultsBox.ItemTemplate, tpl)) PlexResultsBox.ItemTemplate = tpl;
+            if (!ReferenceEquals(PlexResultsBox.ItemsPanel, panel)) PlexResultsBox.ItemsPanel   = panel;
 
             // Highlight exactly one of the three toolbar buttons.
             StylePlexViewButton(PlexListViewBtn,       !_settings.PlexTileView && !_plexFullscreen);
@@ -1128,6 +1138,7 @@ namespace VideoPlayer
 
             PlexCategoryHost.Visibility  = Visibility.Collapsed;
             PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
+            RebuildSeasonBar();
             PlexSearchPlaceholder.Text   = "Search Plex…";
             PlexSearchBox.Text           = "";
             _plexBrowseItems  = new();
@@ -1262,6 +1273,9 @@ namespace VideoPlayer
         /// <summary>Client-side narrowing of the current list by the filter box (title/subtitle contains).</summary>
         private void ApplyPlexNarrow()
         {
+            // Pick the right row template for this drill level (episodes → lean list) before render.
+            ApplyPlexViewMode();
+
             var q = _plexSearchMode ? "" : (PlexSearchBox?.Text ?? "").Trim();
             var filtered = new List<PlexItem>(_plexCurrentItems.Count);
             foreach (var it in _plexCurrentItems)
@@ -1357,27 +1371,87 @@ namespace VideoPlayer
             if (_plexSearchMode || _plexDrill.Count == 0)
             {
                 PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                // Root crumb → back to the browse (level-0) list.
+                AddCrumb(_plexSection?.Title ?? "Library", isCurrent: false, () =>
+                {
+                    _plexDrill.Clear();
+                    _plexCurrentItems = _plexBrowseItems;
+                    RebuildBreadcrumb();
+                    ApplyPlexNarrow();
+                });
+
+                for (int i = 0; i < _plexDrill.Count; i++)
+                {
+                    AddSeparator();
+                    int index = i;
+                    bool isCurrent = i == _plexDrill.Count - 1;
+                    AddCrumb(_plexDrill[i].Label, isCurrent, isCurrent ? null : () => PlexPopTo(index));
+                }
+
+                PlexBreadcrumbBar.Visibility = Visibility.Visible;
+            }
+
+            RebuildSeasonBar();
+        }
+
+        /// <summary>
+        /// Rebuilds the season quick-nav chips (S01/S02…) shown while viewing a season's episodes.
+        /// The sibling seasons are the items of the frame above the current one (the show); the
+        /// current season is the top frame. Clicking a chip jumps straight to that season's
+        /// episodes. Hidden unless we're two levels deep with more than one season to hop between.
+        /// </summary>
+        private void RebuildSeasonBar()
+        {
+            if (PlexSeasonBar == null) return;
+            PlexSeasonBar.Children.Clear();
+
+            List<PlexItem> seasons = null;
+            string currentKey = null;
+            if (!_plexSearchMode && _plexDrill.Count >= 2)
+            {
+                var parent = _plexDrill[_plexDrill.Count - 2];
+                seasons    = parent.Items?.Where(s => s.Kind == "season").ToList();
+                currentKey = _plexDrill[^1].RatingKey;
+            }
+
+            if (seasons == null || seasons.Count < 2)
+            {
+                PlexSeasonBar.Visibility = Visibility.Collapsed;
                 return;
             }
 
-            // Root crumb → back to the browse (level-0) list.
-            AddCrumb(_plexSection?.Title ?? "Library", isCurrent: false, () =>
+            foreach (var s in seasons)
             {
-                _plexDrill.Clear();
-                _plexCurrentItems = _plexBrowseItems;
-                RebuildBreadcrumb();
-                ApplyPlexNarrow();
-            });
-
-            for (int i = 0; i < _plexDrill.Count; i++)
-            {
-                AddSeparator();
-                int index = i;
-                bool isCurrent = i == _plexDrill.Count - 1;
-                AddCrumb(_plexDrill[i].Label, isCurrent, isCurrent ? null : () => PlexPopTo(index));
+                bool isCurrent = s.RatingKey == currentKey;
+                var chip = new Button
+                {
+                    Content = s.SeasonShortLabel,
+                    Style   = (Style)FindResource("PlexSeasonChip"),
+                    ToolTip = s.Title,
+                    Tag     = s,
+                    Background = isCurrent ? SegActiveBg : SegInactiveBg,
+                    Foreground = isCurrent ? SegActiveFg : SegInactiveFg,
+                };
+                if (!isCurrent) chip.Click += SeasonChip_Click;
+                PlexSeasonBar.Children.Add(chip);
             }
 
-            PlexBreadcrumbBar.Visibility = Visibility.Visible;
+            PlexSeasonBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>Jump to another season's episodes: swap the current season frame for the picked one.</summary>
+        private async void SeasonChip_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button b || b.Tag is not PlexItem season) return;
+            if (_plexDrill.Count < 2) return;
+
+            // Drop the current season frame (keeping the show frame), then drill into the pick.
+            _plexDrill.RemoveAt(_plexDrill.Count - 1);
+            _plexCurrentItems = _plexDrill[^1].Items;
+            await PlexDrillInto(season);
         }
 
         private void PlexPopTo(int frameIndex)

@@ -164,6 +164,17 @@ namespace VideoPlayer.Models
         public bool HasEpisodeBadge => IsEpisode && EpisodeIndex > 0;
         /// <summary>Compact ordering badge overlaid on the poster, e.g. "E5".</summary>
         public string EpisodeBadge => HasEpisodeBadge ? $"E{EpisodeIndex}" : "";
+        /// <summary>Zero-padded episode label for the aligned episode list, e.g. "E05" ("•" when unknown).</summary>
+        public string EpisodeNumberLabel => HasEpisodeBadge ? $"E{EpisodeIndex:D2}" : "•";
+
+        /// <summary>
+        /// Season ordinal for a season or episode item (0 = specials / unknown). Plex stores a
+        /// season's own number in its <c>index</c> (→ <see cref="EpisodeIndex"/> here), while an
+        /// episode carries its season in <c>parentIndex</c> (→ <see cref="SeasonIndex"/>).
+        /// </summary>
+        public int SeasonNumber => Kind == "season" ? EpisodeIndex : SeasonIndex;
+        /// <summary>Compact season chip label, e.g. "S02", or "Sp" for the specials season.</summary>
+        public string SeasonShortLabel => SeasonNumber > 0 ? $"S{SeasonNumber:D2}" : "Sp";
         /// <summary>Whether the leading art column has anything to show (poster or episode badge).</summary>
         public bool HasLeadArt => HasThumb || HasEpisodeBadge;
 
