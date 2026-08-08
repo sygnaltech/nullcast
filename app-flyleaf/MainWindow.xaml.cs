@@ -493,12 +493,22 @@ namespace VideoPlayer
                                 }
                                 if (_activeMuid != null && _api != null)
                                 {
-                                    var muid    = _activeMuid;
-                                    var seconds = (int)(_player.Duration / 10000000.0);
-                                    _ = _api.SavePositionAsync(muid, seconds);
+                                    var muid = _activeMuid;
+
+                                    // The video reached its end: mark it completed and reset the
+                                    // saved position back to the start. Persisting the end position
+                                    // would make a later replay resume at the very end and instantly
+                                    // re-fire Ended — which in a playlist reads as "starts the video,
+                                    // then immediately skips to the next one". Resetting the pointer
+                                    // as we leave means clicking it again begins from the beginning.
+                                    _ = _api.SavePositionAsync(muid, 0);
 
                                     var bm2 = PlaylistItems.FirstOrDefault(b => b.Muid == muid);
-                                    if (bm2 != null) bm2.IsCompleted = true;
+                                    if (bm2 != null)
+                                    {
+                                        bm2.Position    = 0;
+                                        bm2.IsCompleted = true;
+                                    }
                                     if (_settings.CompletedMuids.Add(muid))
                                         SaveSettings();
 
