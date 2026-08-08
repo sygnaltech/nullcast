@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using PostHog;
 
 namespace VideoPlayer.Services
@@ -51,8 +52,25 @@ namespace VideoPlayer.Services
 
         public void Dispose()
         {
-            // Disposing flushes any buffered events. Guarded: shutdown must never throw.
-            try { (_client as IDisposable)?.Dispose(); } catch { }
+            // Disposing flushes any buffered events — a synchronous, blocking network flush.
+            //
+            // This runs from App.OnExit on the WPF Dispatcher (UI) thread, where a
+            // DispatcherSynchronizationContext is installed. The SDK's Dispose blocks that thread
+            // on an async flush whose continuation is posted back to the very same thread, so it
+            // DEADLOCKS: the window closes but the process's foreground UI thread hangs forever and
+            // the app never exits (a launching terminal never gets its prompt back).
+            //
+            // Fix: run the blocking Dispose on a thread-pool thread, which carries no
+            // SynchronizationContext, so the flush completes normally (~sub-second). Cap the wait
+            // so a dead network can't stall exit either — telemetry is best-effort, and losing the
+            // last few buffered events on a hung flush is preferable to hanging shutdown.
+            if (_client is not IDisposable d) return;
+            try
+            {
+                Task.Run(() => { try { d.Dispose(); } catch { } })
+                    .Wait(TimeSpan.FromSeconds(3));
+            }
+            catch { }
         }
     }
 }

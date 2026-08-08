@@ -48,8 +48,12 @@ namespace VideoPlayer
 
         protected override void OnExit(ExitEventArgs e)
         {
-            // Flush + release the PostHog telemetry sink (no-op when analytics is off).
+            Log("=== App exiting: shutting telemetry down ===");
+            // Flush + release the PostHog telemetry sink (no-op when analytics is off). Bounded so a
+            // telemetry flush can never hang shutdown — see PostHogSink.Dispose for the deadlock this
+            // guards against.
             Services.Telemetry.Shutdown();
+            Log("=== App exit complete ===");
             base.OnExit(e);
         }
 
