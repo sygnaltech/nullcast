@@ -1,0 +1,6 @@
+{
+  "_comment": "Nullcast telemetry (PostHog). project_key is a PUBLIC PostHog project/ingest key — safe to commit; it is not a secret. Leave project_key empty (or set enabled=false) to turn telemetry off. host blank = US cloud (us.i.posthog.com); use https://eu.i.posthog.com for the EU cloud. This file is copied next to the .exe on build — edit it there and relaunch to change the key with no rebuild.",
+  "project_key": "phc_A2ji5zkopHWEnyWwhvrQSfrXVMCCztj4qnPJSKzUS9qb",
+  "host": "https://us.i.posthog.com",
+  "enabled": true
+}

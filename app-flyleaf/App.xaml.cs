@@ -19,6 +19,10 @@ namespace VideoPlayer
             Trace.AutoFlush = true;
             Log($"=== App started ===");
 
+            // Telemetry config lives in telemetry.json next to the exe — dormant unless a key is set.
+            Services.Telemetry.Init();
+            Services.Telemetry.Track("app_started");
+
             // Initialize Flyleaf engine (must happen before any Player is created)
             Engine.Start(new EngineConfig
             {
@@ -40,6 +44,13 @@ namespace VideoPlayer
                 MessageBox.Show($"Crash logged to:\n{_logPath}\n\n{ex.Exception}", "Fatal Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 ex.Handled = true;
             };
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            // Flush + release the PostHog telemetry sink (no-op when analytics is off).
+            Services.Telemetry.Shutdown();
+            base.OnExit(e);
         }
 
         public static void Log(string message)

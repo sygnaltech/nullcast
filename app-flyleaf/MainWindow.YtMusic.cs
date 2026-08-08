@@ -208,6 +208,15 @@ namespace VideoPlayer
             _activeMuid = null;
             _activePlex = null;
             _seekOnPlay = null;
+            Services.Telemetry.Track("media_play", new()
+            {
+                ["source"]      = "ytmusic",
+                ["title"]       = item.Title ?? "",
+                ["artist"]      = item.Subtitle ?? "",
+                ["media_id"]    = item.VideoId ?? "",
+                ["duration_ms"] = (long)item.DurationSeconds * 1000,
+                ["url"]         = item.Url ?? "",
+            });
             await PlayUrl(item.Url, item.Title, audioOnly: true, cookieOverride: false);
         }
 

@@ -133,12 +133,14 @@ namespace VideoPlayer
 
         private async void NextButton_Click(object sender, System.Windows.RoutedEventArgs e)
         {
+            Services.Telemetry.Track("media_next", new() { ["queue_kind"] = _queueKind.ToString() });
             if (_queueKind == QueueKind.Plex) { StepPlex(+1); return; }
             await StepFlatAsync(+1);
         }
 
         private async void PrevButton_Click(object sender, System.Windows.RoutedEventArgs e)
         {
+            Services.Telemetry.Track("media_previous", new() { ["queue_kind"] = _queueKind.ToString() });
             if (_queueKind == QueueKind.Plex) { StepPlex(-1); return; }
 
             // Standard player feel: >3s in, "previous" restarts the current track first.
@@ -171,6 +173,7 @@ namespace VideoPlayer
             _shuffle = !_shuffle;
             _settings.Shuffle = _shuffle;
             SaveSettings();
+            Services.Telemetry.Track("shuffle_toggled", new() { ["enabled"] = _shuffle });
 
             if (_queueKind == QueueKind.Flat && _orderPos >= 0)
                 RebuildOrder(_order[_orderPos]);   // re-permute, keeping the current track leading
@@ -183,6 +186,7 @@ namespace VideoPlayer
             _repeatMode = (RepeatMode)(((int)_repeatMode + 1) % 3);
             _settings.RepeatMode = (int)_repeatMode;
             SaveSettings();
+            Services.Telemetry.Track("repeat_changed", new() { ["mode"] = _repeatMode.ToString() });
             RefreshTransportToggles();
         }
 
@@ -192,6 +196,7 @@ namespace VideoPlayer
             AutoPlayNextMenuItem.IsChecked = _settings.AutoPlayNextEpisode;
             if (!_settings.AutoPlayNextEpisode) CancelNextEpisodeCountdown();
             SaveSettings();
+            Services.Telemetry.Track("autoplay_toggled", new() { ["enabled"] = _settings.AutoPlayNextEpisode });
             RefreshTransportToggles();
         }
 

@@ -232,6 +232,8 @@ namespace VideoPlayer
                 return;
             }
 
+            Services.Telemetry.Track("search", new() { ["query"] = query, ["length"] = query.Length });
+
             // 1) Bookmarks — synchronous, in-memory filter of the current workspace.
             var bookmarks = FilterBookmarks(query);
 
@@ -347,9 +349,11 @@ namespace VideoPlayer
             switch (r.Payload)
             {
                 case PlexItem px:
+                    Services.Telemetry.Track("search_result_activated", new() { ["result_type"] = "plex", ["title"] = px.Title ?? "" });
                     PlayPlexItem(px);
                     break;
                 case Bookmark bm:
+                    Services.Telemetry.Track("search_result_activated", new() { ["result_type"] = "bookmark", ["title"] = bm.Title ?? "" });
                     await PlayBookmark(bm);
                     break;
             }

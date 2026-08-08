@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -84,10 +85,13 @@ namespace VideoPlayer.Services
             if (!baseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 return (false, "Server address must start with http:// or https://");
 
+            var url = $"{baseUrl}/identity?X-Plex-Token={Uri.EscapeDataString(token)}";
+            var sw  = Stopwatch.StartNew();
             try
             {
-                var url  = $"{baseUrl}/identity?X-Plex-Token={Uri.EscapeDataString(token)}";
                 var resp = await _http.GetAsync(url);
+                Telemetry.PlexRequest("identity", url, (int)resp.StatusCode, sw.ElapsedMilliseconds,
+                    resp.IsSuccessStatusCode ? null : $"HTTP {(int)resp.StatusCode} {resp.StatusCode}");
 
                 if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                     return (false, "Server reached, but the token was rejected (401).");
@@ -111,6 +115,8 @@ namespace VideoPlayer.Services
             }
             catch (Exception ex)
             {
+                Telemetry.PlexRequest("identity", url, null, sw.ElapsedMilliseconds,
+                    $"{ex.GetType().Name}: {ex.Message}");
                 return (false, $"Could not reach server: {ex.Message}");
             }
         }
@@ -136,7 +142,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{baseUrl}/hubs/search?query={Uri.EscapeDataString(query.Trim())}" +
                           $"&limit=30&includeGenres=1&X-Plex-Token={Uri.EscapeDataString(token)}";
-                var parsed = await GetJsonAsync(url).ConfigureAwait(false);
+                var parsed = await GetJsonAsync("search", url).ConfigureAwait(false);
 
                 var metas = new List<PlexMetadata>();
                 foreach (var hub in parsed?.MediaContainer?.Hub ?? Array.Empty<PlexHub>())
@@ -186,7 +192,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{baseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}" +
                           $"?includeGenres=1&X-Plex-Token={Uri.EscapeDataString(token)}";
-                var parsed = await GetJsonAsync(url).ConfigureAwait(false);
+                var parsed = await GetJsonAsync("item", url).ConfigureAwait(false);
                 var meta   = parsed?.MediaContainer?.Metadata?.FirstOrDefault();
                 if (meta == null) return null;
 
@@ -205,7 +211,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{baseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}" +
                           $"?X-Plex-Token={Uri.EscapeDataString(token)}";
-                var parsed = await GetJsonAsync(url).ConfigureAwait(false);
+                var parsed = await GetJsonAsync("partKey", url).ConfigureAwait(false);
                 var meta   = parsed?.MediaContainer?.Metadata?.FirstOrDefault();
                 return meta?.Media?.FirstOrDefault()?.Part?.FirstOrDefault()?.Key;
             }
@@ -232,7 +238,7 @@ namespace VideoPlayer.Services
             {
                 var url  = $"{_store.PlexBaseUrl}/library/sections" +
                            $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
-                var parsed = await GetJsonAsync(url);
+                var parsed = await GetJsonAsync("sections", url);
                 foreach (var d in parsed?.MediaContainer?.Directory ?? Array.Empty<PlexDirectory>())
                 {
                     var type = (d.Type ?? "").ToLowerInvariant();
@@ -256,7 +262,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{_store.PlexBaseUrl}/library/sections/{Uri.EscapeDataString(sectionKey)}/genre" +
                           $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
-                var parsed = await GetJsonAsync(url);
+                var parsed = await GetJsonAsync("genres", url);
                 foreach (var d in parsed?.MediaContainer?.Directory ?? Array.Empty<PlexDirectory>())
                 {
                     if (string.IsNullOrEmpty(d.Key) || string.IsNullOrEmpty(d.Title)) continue;
@@ -309,7 +315,7 @@ namespace VideoPlayer.Services
                           $"&X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
                 // ConfigureAwait(false): build the (up to 300) items on a thread-pool thread, not
                 // the UI thread. The UI caller resumes on the dispatcher via its own await.
-                var parsed = await GetJsonAsync(url, limit).ConfigureAwait(false);
+                var parsed = await GetJsonAsync("browse", url, limit).ConfigureAwait(false);
 
                 foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
                 {
@@ -336,7 +342,7 @@ namespace VideoPlayer.Services
             {
                 var url = $"{_store.PlexBaseUrl}/library/metadata/{Uri.EscapeDataString(ratingKey)}/children" +
                           $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
-                var parsed = await GetJsonAsync(url, 300).ConfigureAwait(false);
+                var parsed = await GetJsonAsync("children", url, 300).ConfigureAwait(false);
                 foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
                     results.Add(Build(m));
             }
@@ -354,19 +360,51 @@ namespace VideoPlayer.Services
         /// now with genres) runs on a thread-pool thread and never blocks the UI. Callers touch
         /// the UI only after awaiting, back on the dispatcher.
         /// </summary>
-        private static async Task<PlexSearchResponse?> GetJsonAsync(string url, int? containerSize = null)
+        private static async Task<PlexSearchResponse?> GetJsonAsync(string op, string url, int? containerSize = null)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            if (containerSize is int cs)
+            var sw = Stopwatch.StartNew();
+            HttpResponseMessage? resp = null;
+            try
             {
-                req.Headers.Add("X-Plex-Container-Start", "0");
-                req.Headers.Add("X-Plex-Container-Size", cs.ToString());
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                if (containerSize is int cs)
+                {
+                    req.Headers.Add("X-Plex-Container-Start", "0");
+                    req.Headers.Add("X-Plex-Container-Size", cs.ToString());
+                }
+                resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead)
+                                  .ConfigureAwait(false);
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    // Log the HTTP failure here (with the status we have), then let
+                    // EnsureSuccessStatusCode throw for the caller's existing catch to handle.
+                    Telemetry.PlexRequest(op, url, (int)resp.StatusCode, sw.ElapsedMilliseconds,
+                        $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}");
+                    resp.EnsureSuccessStatusCode();
+                }
+
+                await using var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                var result = await JsonSerializer.DeserializeAsync<PlexSearchResponse>(stream).ConfigureAwait(false);
+                Telemetry.PlexRequest(op, url, (int)resp.StatusCode, sw.ElapsedMilliseconds, null);
+                return result;
             }
-            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead)
-                                        .ConfigureAwait(false);
-            resp.EnsureSuccessStatusCode();
-            await using var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
-            return await JsonSerializer.DeserializeAsync<PlexSearchResponse>(stream).ConfigureAwait(false);
+            catch (Exception ex)
+            {
+                // Network failure, timeout, or parse error. Skip re-logging the non-success case
+                // already reported above (there resp is non-null and unsuccessful).
+                if (resp == null || resp.IsSuccessStatusCode)
+                {
+                    int? status = resp != null ? (int)resp.StatusCode : (int?)null;
+                    Telemetry.PlexRequest(op, url, status, sw.ElapsedMilliseconds,
+                        $"{ex.GetType().Name}: {ex.Message}");
+                }
+                throw;
+            }
+            finally
+            {
+                resp?.Dispose();
+            }
         }
 
         // ──────────────────────────────────────────────────────
@@ -388,21 +426,31 @@ namespace VideoPlayer.Services
         public async Task ReportTimelineAsync(PlexItem item, string state, long timeMs)
         {
             if (!IsConfigured || item == null || string.IsNullOrEmpty(item.RatingKey)) return;
+
+            var token = _store.GetPlexToken();
+            var key   = Uri.EscapeDataString($"/library/metadata/{item.RatingKey}");
+            var url =
+                $"{_store.PlexBaseUrl}/:/timeline" +
+                $"?ratingKey={Uri.EscapeDataString(item.RatingKey)}" +
+                $"&key={key}" +
+                $"&state={Uri.EscapeDataString(state)}" +
+                $"&time={timeMs}" +
+                $"&duration={item.DurationMs}" +
+                $"&X-Plex-Token={Uri.EscapeDataString(token)}";
+            var sw = Stopwatch.StartNew();
             try
             {
-                var token = _store.GetPlexToken();
-                var key   = Uri.EscapeDataString($"/library/metadata/{item.RatingKey}");
-                var url =
-                    $"{_store.PlexBaseUrl}/:/timeline" +
-                    $"?ratingKey={Uri.EscapeDataString(item.RatingKey)}" +
-                    $"&key={key}" +
-                    $"&state={Uri.EscapeDataString(state)}" +
-                    $"&time={timeMs}" +
-                    $"&duration={item.DurationMs}" +
-                    $"&X-Plex-Token={Uri.EscapeDataString(token)}";
-                await _http.GetAsync(url);
+                var resp = await _http.GetAsync(url);
+                Telemetry.PlexRequest("timeline", url, (int)resp.StatusCode, sw.ElapsedMilliseconds,
+                    resp.IsSuccessStatusCode ? null : $"HTTP {(int)resp.StatusCode}");
             }
-            catch { /* progress reporting is never critical */ }
+            catch (Exception ex)
+            {
+                // Progress reporting is never critical to playback — but a failure here is a strong
+                // connectivity signal, so we still record it (local always, PostHog on failure).
+                Telemetry.PlexRequest("timeline", url, null, sw.ElapsedMilliseconds,
+                    $"{ex.GetType().Name}: {ex.Message}");
+            }
         }
     }
 }

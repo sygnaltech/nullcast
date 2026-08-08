@@ -470,6 +470,15 @@ namespace VideoPlayer
                                     break;
                                 }
 
+                                Telemetry.Track("media_completed", new()
+                                {
+                                    ["source"]      = _activePlex != null ? "plex"
+                                                    : _activeMuid != null ? "bookmark" : "url",
+                                    ["title"]       = _activePlex?.Title ?? "",
+                                    ["media_id"]    = _activePlex?.RatingKey ?? _activeMuid ?? "",
+                                    ["duration_ms"] = _player != null ? _player.Duration / 10000L : 0L,
+                                });
+
                                 if (_activePlex != null && _plex != null)
                                 {
                                     // Report final position so Plex marks it watched/resumable.
@@ -539,6 +548,7 @@ namespace VideoPlayer
             if (tokens != null && !string.IsNullOrEmpty(tokens.AccessToken))
             {
                 UpdateLoginUI(tokens.DisplayName);
+                Telemetry.SetUser(tokens.Email, tokens.DisplayName);
                 try
                 {
                     await LoadPlaylistAsync();
@@ -672,6 +682,7 @@ namespace VideoPlayer
         private void SelectTab(SidebarTab tab)
         {
             _activeTab = tab;
+            Telemetry.Track("tab_switched", new() { ["tab"] = tab.ToString() });
 
             // Leaving Plex? Drop the full-screen browse takeover (and resume playback).
             if (_plexFullscreen && tab != SidebarTab.Plex)
@@ -738,6 +749,12 @@ namespace VideoPlayer
                     return;
                 }
 
+                Telemetry.Track("media_play", new()
+                {
+                    ["source"] = "history",
+                    ["title"]  = entry.Title ?? "",
+                    ["url"]    = entry.Url,
+                });
                 await PlayUrl(entry.Url);
             }
         }
@@ -946,6 +963,7 @@ namespace VideoPlayer
             {
                 _settings.PlexTileView = tiles;
                 SaveSettings();
+                Telemetry.Track("plex_view_mode", new() { ["mode"] = tiles ? "tiles" : "list" });
             }
             ApplyPlexViewMode();
         }
@@ -1222,6 +1240,7 @@ namespace VideoPlayer
             if (PlexCategoryList.SelectedItem is not PlexCategory cat) return;
             if (ReferenceEquals(cat, _plexCategory)) return;   // ignore programmatic re-selection
             PlexCategoryPopup.IsOpen = false;
+            Telemetry.Track("plex_browse", new() { ["category"] = cat.Label ?? "", ["view"] = cat.View.ToString() });
             await ApplyPlexCategory(cat);
         }
 
@@ -1644,6 +1663,18 @@ namespace VideoPlayer
                     RefreshHistoryView();
 
                 App.Log($"[Plex] Opening ratingKey={item.RatingKey} resume={item.ViewOffsetMs}ms");
+                Telemetry.Track("media_play", new()
+                {
+                    ["source"]      = "plex",
+                    ["title"]       = item.Title ?? "",
+                    ["media_id"]    = item.RatingKey ?? "",
+                    ["media_type"]  = item.Kind ?? "",
+                    ["duration_ms"] = item.DurationMs,
+                    ["resume_ms"]   = item.ViewOffsetMs,
+                    ["show_title"]  = item.ShowTitle ?? "",
+                    ["season"]      = item.SeasonIndex,
+                    ["episode"]     = item.EpisodeIndex,
+                });
                 _player.OpenAsync(streamUrl);
                 _ = _plex.ReportTimelineAsync(item, "playing", item.ViewOffsetMs);
             }
@@ -1806,6 +1837,13 @@ namespace VideoPlayer
             _activeMuid = null;      // podcasts aren't bookmarks — don't save position server-side
             _activePlex = null;
             _seekOnPlay = null;
+            Telemetry.Track("media_play", new()
+            {
+                ["source"]     = "podcast",
+                ["title"]      = episode.Title ?? "",
+                ["show_title"] = episode.ShowTitle ?? "",
+                ["url"]        = episode.AudioUrl ?? "",
+            });
             await PlayUrl(episode.AudioUrl, episode.Title, forceDirect: true);
         }
 
@@ -1847,6 +1885,7 @@ namespace VideoPlayer
             {
                 var tokens = await _auth.LoginAsync();
                 UpdateLoginUI(tokens.DisplayName);
+                Telemetry.SetUser(tokens.Email, tokens.DisplayName);
                 await LoadPlaylistAsync();
             }
             catch (Exception ex)
@@ -1861,6 +1900,7 @@ namespace VideoPlayer
 
         private async void SignOut_Click(object sender, RoutedEventArgs e)
         {
+            Telemetry.ClearUser();
             await _auth.SignOutAsync();
             PlaylistItems.Clear();
             UpdateLoginUI(null);
@@ -1909,6 +1949,15 @@ namespace VideoPlayer
             if (fresh?.Position is int pos && pos > 0)
                 _seekOnPlay = pos * 1000L;
 
+            Telemetry.Track("media_play", new()
+            {
+                ["source"]     = "bookmark",
+                ["title"]      = bookmark.Title ?? "",
+                ["media_id"]   = bookmark.Muid ?? "",
+                ["media_type"] = bookmark.Type ?? "",
+                ["url"]        = bookmark.Url ?? "",
+                ["resume_ms"]  = _seekOnPlay ?? 0L,
+            });
             await PlayUrl(bookmark.Url);
         }
 
@@ -2015,6 +2064,7 @@ namespace VideoPlayer
                 _activeMuid = null;
                 _seekOnPlay = null;
                 _queueKind  = QueueKind.None;   // an ad-hoc URL isn't part of any queue
+                Telemetry.Track("media_play", new() { ["source"] = "url", ["entry"] = "open_dialog", ["url"] = dialog.Url ?? "" });
                 await PlayUrl(dialog.Url);
             }
         }
@@ -2382,12 +2432,14 @@ namespace VideoPlayer
                 if (_activePlex != null && _plex != null)
                     _ = _plex.ReportTimelineAsync(_activePlex, "paused", _player.CurTime / 10000L);
                 _player.Pause();
+                Telemetry.Track("media_pause", new() { ["position_ms"] = _player.CurTime / 10000L });
             }
             else
             {
                 if (_activePlex != null && _plex != null)
                     _ = _plex.ReportTimelineAsync(_activePlex, "playing", _player.CurTime / 10000L);
                 _player.Play();
+                Telemetry.Track("media_resume", new() { ["position_ms"] = _player.CurTime / 10000L });
             }
         }
 
@@ -2403,6 +2455,7 @@ namespace VideoPlayer
 
             // "1×", "1.25×", …
             SpeedButton.Content = (_playbackSpeed % 1 == 0 ? _playbackSpeed.ToString("0") : _playbackSpeed.ToString("0.##")) + "×";
+            Telemetry.Track("speed_changed", new() { ["speed"] = _playbackSpeed });
         }
 
         private void ProgressSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -2417,6 +2470,7 @@ namespace VideoPlayer
             {
                 var newTimeMs = (int)(ProgressSlider.Value * (_player.Duration / 10000.0) / 100.0);
                 _player.Seek(newTimeMs);
+                Telemetry.Track("seek", new() { ["method"] = "slider", ["target_ms"] = newTimeMs });
             }
         }
 
@@ -2425,6 +2479,7 @@ namespace VideoPlayer
             if (_player != null)
             {
                 _player.Audio.Volume = (int)VolumeSlider.Value;
+                Telemetry.Track("volume_changed", new() { ["volume"] = (int)VolumeSlider.Value });
             }
         }
 
@@ -2529,6 +2584,7 @@ namespace VideoPlayer
                 {
                     _activeMuid = null;
                     _seekOnPlay = null;
+                    Telemetry.Track("media_play", new() { ["source"] = "url", ["entry"] = "drop", ["url"] = url ?? "" });
                     await PlayUrl(url);
                 }
             }
@@ -2868,6 +2924,7 @@ namespace VideoPlayer
 
         private void ToggleFullscreen()
         {
+            Telemetry.Track("fullscreen_toggled", new() { ["enabled"] = !_isFullscreen });
             if (_isFullscreen)
             {
                 _isFullscreen = false;
@@ -3223,6 +3280,12 @@ namespace VideoPlayer
                     var maxMs   = (int)(_player.Duration / 10000.0);
                     var newMs   = Math.Clamp(curMs + (e.Key == Key.Right ? deltaMs : -deltaMs), 0, maxMs);
                     _player.Seek(newMs);
+                    Telemetry.Track("seek", new()
+                    {
+                        ["method"]    = "keyboard",
+                        ["target_ms"] = newMs,
+                        ["delta_ms"]  = e.Key == Key.Right ? deltaMs : -deltaMs,
+                    });
                 }
                 e.Handled = true;
             }
