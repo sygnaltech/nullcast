@@ -1942,12 +1942,24 @@
                 </Button>
             </StackPanel>
 
+            <!-- Now-playing title (centered above the timeline) -->
+            <TextBlock x:Name="NowPlayingTitle"
+                       Grid.Column="1"
+                       VerticalAlignment="Top"
+                       Margin="22,11,22,0"
+                       Foreground="#E7E9F1"
+                       FontSize="13"
+                       FontWeight="Medium"
+                       TextAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Text=""/>
+
             <!-- Progress Slider -->
             <Slider x:Name="ProgressSlider"
                     Grid.Column="1"
                     Style="{StaticResource BarSlider}"
                     VerticalAlignment="Center"
-                    Margin="22,0"
+                    Margin="22,12,22,0"
                     Minimum="0"
                     Maximum="100"
                     IsMoveToPointEnabled="True"
