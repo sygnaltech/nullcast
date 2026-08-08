@@ -396,6 +396,25 @@ namespace VideoPlayer
             // video still plays (no worse than before), so we only log.
             _player.OpenCompleted += (s, e) => Dispatcher.InvokeAsync(() =>
             {
+                // Log the open outcome — without this, a failed open (e.g. a Plex Direct Play the
+                // demuxer/decoder rejects, or a 404 Part URL) produces NO log line at all, so the
+                // failure is invisible. The URL carries the X-Plex-Token, so never log it raw.
+                if (!e.IsSubtitles)
+                {
+                    if (e.Success)
+                        App.Log("[Flyleaf] OpenCompleted OK");
+                    else
+                    {
+                        App.Log($"[Flyleaf] OpenCompleted FAILED err=\"{e.Error}\"");
+                        StatusText.Text = "Error loading video";
+                        StatusText.Visibility = Visibility.Visible;
+                        Telemetry.Track("media_open_failed", new()
+                        {
+                            ["error"] = e.Error ?? "unknown",
+                        });
+                    }
+                }
+
                 var audio = _pendingExternalAudioUrl;
                 _pendingExternalAudioUrl = null;
                 if (string.IsNullOrEmpty(audio)) return;
