@@ -405,7 +405,11 @@ namespace VideoPlayer
                         App.Log("[Flyleaf] OpenCompleted OK");
                     else
                     {
-                        App.Log($"[Flyleaf] OpenCompleted FAILED err=\"{e.Error}\"");
+                        // Scrub the URL to its path — it carries the X-Plex-Token in the query.
+                        var path = e.Url;
+                        var q = path?.IndexOf('?') ?? -1;
+                        if (q >= 0) path = path!.Substring(0, q);
+                        App.Log($"[Flyleaf] OpenCompleted FAILED err=\"{e.Error}\" path=\"{path}\"");
                         StatusText.Text = "Error loading video";
                         StatusText.Visibility = Visibility.Visible;
                         Telemetry.Track("media_open_failed", new()
@@ -1691,7 +1695,7 @@ namespace VideoPlayer
                 if (HistoryContent.Visibility == Visibility.Visible)
                     RefreshHistoryView();
 
-                App.Log($"[Plex] Opening ratingKey={item.RatingKey} resume={item.ViewOffsetMs}ms");
+                App.Log($"[Plex] Opening ratingKey={item.RatingKey} resume={item.ViewOffsetMs}ms part={item.PartKey}");
                 Telemetry.Track("media_play", new()
                 {
                     ["source"]      = "plex",
