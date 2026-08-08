@@ -410,8 +410,7 @@ namespace VideoPlayer
                         var q = path?.IndexOf('?') ?? -1;
                         if (q >= 0) path = path!.Substring(0, q);
                         App.Log($"[Flyleaf] OpenCompleted FAILED err=\"{e.Error}\" path=\"{path}\"");
-                        StatusText.Text = "Error loading video";
-                        StatusText.Visibility = Visibility.Visible;
+                        ShowPlaybackError(e.Error);
                         Telemetry.Track("media_open_failed", new()
                         {
                             ["error"] = e.Error ?? "unknown",
@@ -445,6 +444,7 @@ namespace VideoPlayer
                             case Status.Playing:
                                 PlayPauseButton.Content = "⏸";
                                 StatusText.Visibility = Visibility.Collapsed;
+                                HidePlaybackError();
                                 // Any fresh playback supersedes a pending up-next countdown.
                                 CancelNextEpisodeCountdown();
 
@@ -1682,6 +1682,7 @@ namespace VideoPlayer
 
             try
             {
+                HidePlaybackError();
                 StatusText.Text = "Loading video...";
                 StatusText.Visibility = Visibility.Visible;
 
@@ -1713,10 +1714,88 @@ namespace VideoPlayer
             }
             catch (Exception ex)
             {
-                StatusText.Text = "Error loading video";
-                MessageBox.Show($"Error loading Plex video: {ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowPlaybackError(ex.Message);
             }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Playback-error overlay
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Show a prominent, human-readable reason over the video area when a media open fails, so
+        /// a failure is never a silent black screen. <paramref name="rawError"/> is the raw
+        /// FlyleafLib/FFmpeg (or exception) message; <see cref="DescribeOpenError"/> maps it to
+        /// plain language, with the raw text kept as a small technical detail underneath.
+        /// </summary>
+        private void ShowPlaybackError(string rawError)
+        {
+            StatusText.Visibility = Visibility.Collapsed;
+
+            var (reason, detail) = DescribeOpenError(rawError);
+            ErrorOverlayReason.Text = reason;
+            if (string.IsNullOrWhiteSpace(detail))
+                ErrorOverlayDetail.Visibility = Visibility.Collapsed;
+            else
+            {
+                ErrorOverlayDetail.Text = detail;
+                ErrorOverlayDetail.Visibility = Visibility.Visible;
+            }
+            ErrorOverlay.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>Hide the playback-error overlay (a new load is starting, or playback began).</summary>
+        private void HidePlaybackError()
+        {
+            if (ErrorOverlay != null) ErrorOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Translate a raw FlyleafLib/FFmpeg open error into a plain-language reason (shown large)
+        /// plus the raw text as a small technical detail. Covers the common failure modes — server
+        /// unreachable/offline, access denied, file missing, server error, unsupported/corrupt
+        /// media — and falls back to a generic message for anything unrecognised, so we always say
+        /// SOMETHING rather than showing a black screen.
+        /// </summary>
+        private static (string reason, string detail) DescribeOpenError(string rawError)
+        {
+            var e     = rawError ?? "";
+            var lower = e.ToLowerInvariant();
+
+            // Server answered with an HTTP status.
+            if (lower.Contains("404") || lower.Contains("not found"))
+                return ("The server couldn't find this file. It may have been moved, renamed, or "
+                      + "deleted — or the library needs a refresh.", e);
+            if (lower.Contains("401") || lower.Contains("403") || lower.Contains("unauthorized")
+                || lower.Contains("forbidden"))
+                return ("The server refused access. Your sign-in may have expired — try "
+                      + "reconnecting the service in Settings.", e);
+            if (lower.Contains("500") || lower.Contains("502") || lower.Contains("503")
+                || lower.Contains("server error") || lower.Contains("bad gateway")
+                || lower.Contains("unavailable"))
+                return ("The server reported an error. It may be busy, restarting, or "
+                      + "misconfigured.", e);
+
+            // Never reached the server.
+            if (lower.Contains("connection refused") || lower.Contains("failed to connect")
+                || lower.Contains("could not connect") || lower.Contains("connection reset")
+                || lower.Contains("timed out") || lower.Contains("timeout")
+                || lower.Contains("network is unreachable") || lower.Contains("no route")
+                || lower.Contains("name or service not known") || lower.Contains("temporary failure"))
+                return ("Couldn't reach the server. It may be offline, or unreachable from this "
+                      + "network.", e);
+
+            // Reached something, but it isn't playable media.
+            if (lower.Contains("invalid data") || lower.Contains("protocol not found")
+                || lower.Contains("decoder") || lower.Contains("codec")
+                || lower.Contains("moov atom") || lower.Contains("end of file"))
+                return ("This file couldn't be played. Its format may be unsupported, or the file "
+                      + "is incomplete or damaged.", e);
+
+            // Unknown — still say something useful, and surface the raw text for support.
+            return (string.IsNullOrWhiteSpace(e)
+                        ? "Playback failed for an unknown reason."
+                        : "Playback failed.", e);
         }
 
         // ──────────────────────────────────────────────────────
@@ -2175,6 +2254,7 @@ namespace VideoPlayer
                     _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.CurTime / 10000L);
                 _activePlex = null;
 
+                HidePlaybackError();
                 StatusText.Text = "Loading video...";
                 StatusText.Visibility = Visibility.Visible;
 
@@ -2230,10 +2310,7 @@ namespace VideoPlayer
             catch (Exception ex)
             {
                 _pendingExternalAudioUrl = null;
-                StatusText.Text = "Error loading video";
-                StatusText.Visibility = Visibility.Visible;
-                MessageBox.Show($"Error loading video: {ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowPlaybackError(ex.Message);
             }
         }
 

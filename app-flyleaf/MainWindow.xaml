@@ -987,6 +987,33 @@
                            VerticalAlignment="Center"
                            IsHitTestVisible="False"/>
 
+                <!-- Playback-error overlay — shown when a media open fails (server
+                     unreachable, file missing, unsupported format…). Modeled on
+                     NextEpisodeOverlay so it composites over the video surface; without it
+                     a failed open is an unexplained black screen with no indication why. -->
+                <Border x:Name="ErrorOverlay" Visibility="Collapsed"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        MaxWidth="460" Background="#F00F1118"
+                        BorderBrush="#1AFFFFFF" BorderThickness="1"
+                        CornerRadius="12" Padding="26,22" IsHitTestVisible="False">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#000000" BlurRadius="24" ShadowDepth="0" Opacity="0.55"/>
+                    </Border.Effect>
+                    <StackPanel>
+                        <TextBlock Text="⚠  Can't play this video"
+                                   FontSize="16" FontWeight="SemiBold" Foreground="#ff6666"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="ErrorOverlayReason"
+                                   FontSize="13" Foreground="#E7E9F1"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   MaxWidth="408" Margin="0,10,0,0"/>
+                        <TextBlock x:Name="ErrorOverlayDetail"
+                                   FontSize="11" Foreground="#565C6D"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   MaxWidth="408" Margin="0,10,0,0" Visibility="Collapsed"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Up-next auto-play card (bottom-right). Shown at the very end of a TV episode
                      when another follows; counts down then auto-advances, cancelable. -->
                 <Border x:Name="NextEpisodeOverlay" Visibility="Collapsed"
