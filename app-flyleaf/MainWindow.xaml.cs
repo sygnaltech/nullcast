@@ -124,6 +124,8 @@ namespace VideoPlayer
         // plus the end-of-episode countdown state.
         private List<PlexItem> _plexPlayQueue = new();
         private int _plexPlayIndex = -1;
+        private string _plexQueueShowKey = "";   // show whose full episode list backs the current queue
+        private int _plexQueueSeedToken;          // stale-guard for async queue seeding
         private System.Windows.Threading.DispatcherTimer _nextEpTimer;
         private int _nextEpCountdown;
         private PlexItem _nextEpTarget;
@@ -1660,21 +1662,33 @@ namespace VideoPlayer
             CancelNextEpisodeCountdown();
             if (item.IsEpisode)
             {
+                // Already walking this show's full episode list (e.g. auto-advance or Next/Prev)?
+                // Just move the cursor — the queue already spans every season, in order.
                 int qIdx = _plexPlayQueue.FindIndex(p => p.RatingKey == item.RatingKey);
-                if (qIdx >= 0)
+                if (qIdx >= 0 && !string.IsNullOrEmpty(_plexQueueShowKey)
+                              && _plexQueueShowKey == item.ShowRatingKey)
                 {
                     _plexPlayIndex = qIdx;
                 }
                 else
                 {
+                    // Seed an instant queue from the current drill list so Next/Prev respond right
+                    // away when we launched from the season view; leave it empty otherwise.
                     int idx = _plexCurrentItems.FindIndex(p => p.RatingKey == item.RatingKey);
                     if (idx >= 0) { _plexPlayQueue = new List<PlexItem>(_plexCurrentItems); _plexPlayIndex = idx; }
                     else          { _plexPlayQueue = new(); _plexPlayIndex = -1; }
+                    _plexQueueShowKey = "";
+
+                    // Upgrade to the show's whole episode list (all seasons, in order) so Next/Prev
+                    // and end-of-episode auto-advance cross season boundaries and work when the
+                    // episode was launched from history, search, or a mixed browse view.
+                    _ = SeedPlexShowQueueAsync(item);
                 }
             }
             else
             {
                 _plexPlayQueue = new(); _plexPlayIndex = -1;
+                _plexQueueShowKey = "";
             }
 
             // Resume where Plex left off, using the shared seek-on-play mechanism.
@@ -1801,6 +1815,35 @@ namespace VideoPlayer
         // ──────────────────────────────────────────────────────
         // Auto-play next episode (TV)
         // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Replace the Plex play queue with the whole show's episode list (every season, in
+        /// broadcast order) so Next/Prev and end-of-episode auto-advance keep working past the end
+        /// of a season and even when the episode was launched outside its season list (history,
+        /// search, a mixed browse view). Best-effort and fired-and-forgotten: it fetches on a
+        /// background request and only applies the result if the same episode is still active, so a
+        /// slow fetch can't stomp a newer selection. Falls back to leaving the instant drill-list
+        /// queue in place when the show can't be resolved or fetched.
+        /// </summary>
+        private async Task SeedPlexShowQueueAsync(PlexItem item)
+        {
+            if (_plex == null || item == null || string.IsNullOrEmpty(item.ShowRatingKey)) return;
+
+            int token = ++_plexQueueSeedToken;
+            var episodes = await _plex.GetAllEpisodesAsync(item.ShowRatingKey);
+
+            // Bail if the user has moved on (newer seed started, or a different item is now playing).
+            if (token != _plexQueueSeedToken) return;
+            if (!ReferenceEquals(_activePlex, item)) return;
+            if (episodes == null || episodes.Count == 0) return;
+
+            int idx = episodes.FindIndex(p => p.RatingKey == item.RatingKey);
+            if (idx < 0) return;   // couldn't place the current episode — keep the instant queue
+
+            _plexPlayQueue    = episodes;
+            _plexPlayIndex    = idx;
+            _plexQueueShowKey = item.ShowRatingKey;
+        }
 
         /// <summary>
         /// The episode that follows the one currently playing, or null when there isn't a sensible

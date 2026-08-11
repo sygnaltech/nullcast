@@ -330,6 +330,30 @@ namespace VideoPlayer.Services
         }
 
         /// <summary>
+        /// Fetches every episode of a show across all seasons, in broadcast order, via Plex's
+        /// <c>/allLeaves</c> endpoint. Used to seed the play queue so Next/Prev and auto-advance
+        /// cross season boundaries and work even when an episode is launched outside its season
+        /// list (history, search, a mixed browse view). Never throws.
+        /// </summary>
+        public async Task<List<PlexItem>> GetAllEpisodesAsync(string showRatingKey)
+        {
+            var results = new List<PlexItem>();
+            if (!IsConfigured || string.IsNullOrEmpty(showRatingKey)) return results;
+
+            try
+            {
+                var url = $"{_store.PlexBaseUrl}/library/metadata/{Uri.EscapeDataString(showRatingKey)}/allLeaves" +
+                          $"?X-Plex-Token={Uri.EscapeDataString(_store.GetPlexToken())}";
+                var parsed = await GetJsonAsync("allLeaves", url, 1000).ConfigureAwait(false);
+                foreach (var m in parsed?.MediaContainer?.Metadata ?? Array.Empty<PlexMetadata>())
+                    results.Add(Build(m));
+            }
+            catch { /* empty */ }
+
+            return results;
+        }
+
+        /// <summary>
         /// Fetches the children of a container: a show → its seasons, a season → its episodes
         /// (in order). Used for the TV drill-down. Never throws.
         /// </summary>

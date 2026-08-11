@@ -56,6 +56,8 @@ namespace VideoPlayer.Models
         [JsonPropertyName("key")]              public string?      Key              { get; set; }
         [JsonPropertyName("thumb")]            public string?      Thumb            { get; set; }
         [JsonPropertyName("grandparentTitle")] public string?      GrandparentTitle { get; set; } // show
+        [JsonPropertyName("grandparentRatingKey")] public string?  GrandparentRatingKey { get; set; } // show id
+        [JsonPropertyName("parentRatingKey")]  public string?      ParentRatingKey  { get; set; } // season/album id
         [JsonPropertyName("parentTitle")]      public string?      ParentTitle      { get; set; } // season/album
         [JsonPropertyName("parentIndex")]      public int?         ParentIndex      { get; set; } // season #
         [JsonPropertyName("index")]            public int?         Index            { get; set; } // episode #
@@ -158,6 +160,13 @@ namespace VideoPlayer.Models
         /// <summary>The show a season/episode belongs to (Plex grandparentTitle). Used to keep
         /// auto-play-next scoped to a single show.</summary>
         public string ShowTitle    { get; set; } = "";
+
+        /// <summary>Rating key of the show this episode/season belongs to (Plex grandparentRatingKey).
+        /// Lets us fetch the whole show's episode list to seed the play queue when an episode is
+        /// launched outside its season list (history, search, a mixed browse view).</summary>
+        public string ShowRatingKey   { get; set; } = "";
+        /// <summary>Rating key of the season this episode belongs to (Plex parentRatingKey).</summary>
+        public string SeasonRatingKey { get; set; } = "";
 
         public bool IsEpisode => Kind == "episode";
         /// <summary>True when this episode has a usable episode number to badge.</summary>
@@ -273,6 +282,8 @@ namespace VideoPlayer.Models
                 SeasonIndex     = m.ParentIndex ?? 0,
                 EpisodeIndex    = m.Index ?? 0,
                 ShowTitle       = m.GrandparentTitle ?? "",
+                ShowRatingKey   = m.GrandparentRatingKey ?? "",
+                SeasonRatingKey = m.ParentRatingKey ?? "",
                 ThumbPath       = m.Thumb,
                 Genres          = m.Genre?.Select(g => g.Tag).Where(t => !string.IsNullOrEmpty(t)).Select(t => t!).ToList()
                                   ?? new List<string>(),
