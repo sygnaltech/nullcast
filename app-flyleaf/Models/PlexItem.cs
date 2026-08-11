@@ -99,6 +99,23 @@ namespace VideoPlayer.Models
     /// <summary>The virtual "smart" views plus the genre view offered in the category dropdown.</summary>
     public enum PlexBrowseView { All, RecentlyAdded, RecentlyWatched, NeverWatched, Genre }
 
+    /// <summary>
+    /// User-selectable ordering for the level-0 browse list, independent of which category is
+    /// showing. <see cref="Default"/> keeps each view's natural order (A–Z for All/Genre, most-recent
+    /// for the smart views); the rest override it. <see cref="Random"/> is never persisted — it's a
+    /// one-shot shuffle applied only for a single re-fetch (the "🎲" button).
+    /// </summary>
+    public enum PlexSortMode { Default, TitleAsc, TitleDesc, RecentlyAdded, YearAsc, YearDesc, Random }
+
+    /// <summary>One entry in the sort dropdown: a display label bound to a <see cref="PlexSortMode"/>.</summary>
+    public class PlexSortOption
+    {
+        public PlexSortOption() { }
+        public PlexSortOption(string label, PlexSortMode mode) { Label = label; Mode = mode; }
+        public string       Label { get; set; } = "";
+        public PlexSortMode Mode  { get; set; }
+    }
+
     /// <summary>A browsable video library (Plex section of type movie or show).</summary>
     public class PlexSection
     {

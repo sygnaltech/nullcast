@@ -44,6 +44,14 @@ namespace VideoPlayer.Models
         public bool PlexTileView { get; set; } = true;
 
         /// <summary>
+        /// Sort order for the Plex browse list, as a <c>PlexSortMode</c> name (e.g. "TitleAsc").
+        /// "Default" keeps each view's natural order. "Random" is never written here (shuffle is a
+        /// one-shot action). Remembered across sessions.
+        /// </summary>
+        [JsonPropertyName("plex_sort")]
+        public string PlexSort { get; set; } = "Default";
+
+        /// <summary>
         /// When true, reaching the very end of a TV episode shows a short cancelable countdown
         /// and then automatically plays the next episode in the same show. On by default;
         /// toggled from File ▸ "Auto-play next episode". Remembered across sessions.

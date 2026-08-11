@@ -1577,22 +1577,76 @@
                                        Visibility="Collapsed"/>
                         </Grid>
 
-                        <!-- View toggle (list vs. tiles) — right-aligned above the results -->
-                        <StackPanel x:Name="PlexViewToolbar"
-                                    Grid.Row="6"
-                                    Orientation="Horizontal"
-                                    HorizontalAlignment="Right"
-                                    Margin="20,0,20,8"
-                                    Visibility="Collapsed">
-                            <Button x:Name="PlexListViewBtn"
+                        <!-- Sort control (left) + view toggle (right) above the results -->
+                        <DockPanel x:Name="PlexViewToolbar"
+                                   Grid.Row="6"
+                                   Margin="20,0,20,8"
+                                   LastChildFill="False"
+                                   Visibility="Collapsed">
+
+                            <!-- Sort order + one-shot shuffle. Hidden when drilled into a show/season,
+                                 where the list is fixed-order (seasons, episodes). -->
+                            <StackPanel x:Name="PlexSortControls"
+                                        DockPanel.Dock="Left"
+                                        Orientation="Horizontal">
+                                <ToggleButton x:Name="PlexSortButton"
+                                              Height="28" MinWidth="118"
+                                              FontSize="12"
+                                              Content="Default"
+                                              Style="{StaticResource CategoryToggle}"
+                                              ToolTip="Sort order"
+                                              Click="PlexSortButton_Click"/>
+                                <Popup x:Name="PlexSortPopup"
+                                       PlacementTarget="{Binding ElementName=PlexSortButton}"
+                                       Placement="Bottom"
+                                       StaysOpen="False"
+                                       AllowsTransparency="True"
+                                       PopupAnimation="Fade"
+                                       MinWidth="{Binding ActualWidth, ElementName=PlexSortButton}"
+                                       Closed="PlexSortPopup_Closed">
+                                    <Border Background="#151826" BorderBrush="#242A3D" BorderThickness="1"
+                                            CornerRadius="8" Margin="0,4,0,8" Padding="4">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="3" Opacity="0.5"/>
+                                        </Border.Effect>
+                                        <ListBox x:Name="PlexSortList"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 ItemContainerStyle="{StaticResource ListItemContainer}"
+                                                 SelectionChanged="PlexSortList_SelectionChanged"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                            <ListBox.Resources>
+                                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                                            </ListBox.Resources>
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Label}" FontSize="13" Margin="8,6"/>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Border>
+                                </Popup>
+                                <Button x:Name="PlexShuffleBtn"
+                                        Style="{StaticResource IconButton}"
+                                        Width="34" Height="28"
+                                        FontFamily="Segoe UI Symbol" FontSize="14"
+                                        Content="&#x1F500;"
+                                        ToolTip="Shuffle (one-shot random order)"
+                                        Margin="6,0,0,0"
+                                        Click="PlexShuffle_Click"/>
+                            </StackPanel>
+
+                            <!-- View mode (list / tiles / full-screen) -->
+                            <Button x:Name="PlexFullscreenViewBtn"
+                                    DockPanel.Dock="Right"
                                     Style="{StaticResource IconButton}"
                                     Width="34" Height="28"
                                     FontFamily="Segoe UI Symbol" FontSize="14"
-                                    Content="&#x2261;"
-                                    ToolTip="List view"
-                                    Margin="0,0,6,0"
-                                    Click="PlexListView_Click"/>
+                                    Content="&#x26F6;"
+                                    ToolTip="Full-screen tiles (pauses playback)"
+                                    Click="PlexFullscreenView_Click"/>
                             <Button x:Name="PlexTileViewBtn"
+                                    DockPanel.Dock="Right"
                                     Style="{StaticResource IconButton}"
                                     Width="34" Height="28"
                                     FontFamily="Segoe UI Symbol" FontSize="14"
@@ -1600,14 +1654,16 @@
                                     ToolTip="Tile view"
                                     Margin="0,0,6,0"
                                     Click="PlexTileView_Click"/>
-                            <Button x:Name="PlexFullscreenViewBtn"
+                            <Button x:Name="PlexListViewBtn"
+                                    DockPanel.Dock="Right"
                                     Style="{StaticResource IconButton}"
                                     Width="34" Height="28"
                                     FontFamily="Segoe UI Symbol" FontSize="14"
-                                    Content="&#x26F6;"
-                                    ToolTip="Full-screen tiles (pauses playback)"
-                                    Click="PlexFullscreenView_Click"/>
-                        </StackPanel>
+                                    Content="&#x2261;"
+                                    ToolTip="List view"
+                                    Margin="0,0,6,0"
+                                    Click="PlexListView_Click"/>
+                        </DockPanel>
 
                         <!-- Results list — ItemTemplate + ItemsPanel swapped by ApplyPlexViewMode() -->
                         <ListBox x:Name="PlexResultsBox"

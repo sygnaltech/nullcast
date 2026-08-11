@@ -281,7 +281,8 @@ namespace VideoPlayer.Services
         /// Never throws.
         /// </summary>
         public async Task<List<PlexItem>> BrowseAsync(
-            string sectionKey, string sectionType, PlexBrowseView view, string? genreId, int limit = 300)
+            string sectionKey, string sectionType, PlexBrowseView view, string? genreId,
+            PlexSortMode sortMode = PlexSortMode.Default, int limit = 300)
         {
             var results = new List<PlexItem>();
             if (!IsConfigured || string.IsNullOrEmpty(sectionKey)) return results;
@@ -294,12 +295,23 @@ namespace VideoPlayer.Services
                 PlexBrowseView.All or PlexBrowseView.Genre => isShow ? 2 : 1,
                 _                                          => isShow ? 4 : 1,
             };
-            string sort = view switch
+            // An explicit sort mode wins; "Default" falls back to each view's natural order.
+            // originallyAvailableAt = release/first-air date (finer than the bare year).
+            string sort = sortMode switch
             {
-                PlexBrowseView.RecentlyAdded   => "addedAt:desc",
-                PlexBrowseView.RecentlyWatched => "lastViewedAt:desc",
-                PlexBrowseView.NeverWatched    => "addedAt:desc",
-                _                              => "titleSort:asc",
+                PlexSortMode.TitleAsc      => "titleSort:asc",
+                PlexSortMode.TitleDesc     => "titleSort:desc",
+                PlexSortMode.RecentlyAdded => "addedAt:desc",
+                PlexSortMode.YearAsc       => "originallyAvailableAt:asc",
+                PlexSortMode.YearDesc      => "originallyAvailableAt:desc",
+                PlexSortMode.Random        => "random",
+                _ /* Default */            => view switch
+                {
+                    PlexBrowseView.RecentlyAdded   => "addedAt:desc",
+                    PlexBrowseView.RecentlyWatched => "lastViewedAt:desc",
+                    PlexBrowseView.NeverWatched    => "addedAt:desc",
+                    _                              => "titleSort:asc",
+                },
             };
 
             var extra = "";

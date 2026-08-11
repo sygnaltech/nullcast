@@ -108,6 +108,7 @@ namespace VideoPlayer
         private bool _plexSectionsLoaded;
         private readonly ObservableCollection<PlexCategory> _plexCategories = new();
         private PlexCategory _plexCategory;
+        private PlexSortMode _plexSort = PlexSortMode.Default;   // level-0 sort (persisted; Random excluded)
         private readonly Dictionary<string, List<PlexGenre>> _plexGenreCache = new();
         private List<PlexItem> _plexBrowseItems = new();  // level-0 list for the current category
         private List<PlexItem> _plexCurrentItems = new(); // list at the current drill depth
@@ -171,6 +172,17 @@ namespace VideoPlayer
             _plexCategoryView = catView.View;
             _plexCategoryView.Filter = PlexCategoryFilterPredicate;
             PlexCategoryList.ItemsSource = _plexCategoryView;
+
+            // Sort dropdown options (level-0 browse). "Default" keeps each view's natural order.
+            PlexSortList.ItemsSource = new List<PlexSortOption>
+            {
+                new("Default",            PlexSortMode.Default),
+                new("Title (A–Z)",   PlexSortMode.TitleAsc),
+                new("Title (Z–A)",   PlexSortMode.TitleDesc),
+                new("Recently Added",     PlexSortMode.RecentlyAdded),
+                new("Year (Oldest)",      PlexSortMode.YearAsc),
+                new("Year (Newest)",      PlexSortMode.YearDesc),
+            };
 
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             var versionText = $"v{v.Major}.{v.Minor}.{v.Build}";
@@ -575,6 +587,7 @@ namespace VideoPlayer
             RefreshTransportToggles();
             UpdateCookieFileMenuState();
             ApplyPlexViewMode();   // restore the remembered Plex list/tile view
+            RestorePlexSort();     // restore the remembered Plex sort order
 
             await _history.LoadAsync();
             RefreshHistoryView();
@@ -958,6 +971,12 @@ namespace VideoPlayer
             // The list/tile toggle stays available whenever there's something to look at.
             if (PlexViewToolbar != null)
                 PlexViewToolbar.Visibility = PlexItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            // Sorting applies to the level-0 library list only — hide it in search mode and once
+            // drilled into a show/season (those lists are fixed-order: seasons, episodes).
+            if (PlexSortControls != null)
+                PlexSortControls.Visibility =
+                    (!_plexSearchMode && _plexDrill.Count == 0 && PlexItems.Count > 0)
+                        ? Visibility.Visible : Visibility.Collapsed;
 
             if (PlexItems.Count == 0)
             {
@@ -1295,7 +1314,66 @@ namespace VideoPlayer
             await LoadPlexBrowse();
         }
 
-        private async Task LoadPlexBrowse()
+        // ──────────────────────────────────────────────────────
+        // Sort order (level-0 browse). Independent of the category:
+        // "Default" keeps each view's natural order; the rest override
+        // it. Shuffle is a one-shot random re-fetch that doesn't change
+        // the persisted sort.
+        // ──────────────────────────────────────────────────────
+
+        private static string PlexSortLabel(PlexSortMode m) => m switch
+        {
+            PlexSortMode.TitleAsc      => "Title (A–Z)",
+            PlexSortMode.TitleDesc     => "Title (Z–A)",
+            PlexSortMode.RecentlyAdded => "Recently Added",
+            PlexSortMode.YearAsc       => "Year (Oldest)",
+            PlexSortMode.YearDesc      => "Year (Newest)",
+            _                          => "Default",
+        };
+
+        /// <summary>Apply the sort persisted in settings to the field, button face and list selection.</summary>
+        private void RestorePlexSort()
+        {
+            _plexSort = Enum.TryParse<PlexSortMode>(_settings.PlexSort, out var m) && m != PlexSortMode.Random
+                ? m : PlexSortMode.Default;
+            if (PlexSortButton != null) PlexSortButton.Content = PlexSortLabel(_plexSort);
+            if (PlexSortList != null)
+                PlexSortList.SelectedItem = PlexSortList.Items.OfType<PlexSortOption>()
+                                                             .FirstOrDefault(o => o.Mode == _plexSort);
+        }
+
+        private void PlexSortButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (PlexSortButton.IsChecked == true) PlexSortPopup.IsOpen = true;
+            else                                  PlexSortPopup.IsOpen = false;
+        }
+
+        private void PlexSortPopup_Closed(object sender, EventArgs e)
+            => PlexSortButton.IsChecked = false;
+
+        private async void PlexSortList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (PlexSortList.SelectedItem is not PlexSortOption opt) return;
+            PlexSortPopup.IsOpen = false;
+            if (opt.Mode == _plexSort) return;   // ignore programmatic re-selection (restore/reset)
+
+            _plexSort = opt.Mode;
+            PlexSortButton.Content = PlexSortLabel(_plexSort);
+            _settings.PlexSort = _plexSort.ToString();
+            SaveSettings();
+            Telemetry.Track("plex_sort", new() { ["sort"] = _plexSort.ToString() });
+            await LoadPlexBrowse();
+        }
+
+        /// <summary>One-shot shuffle: re-fetch the current browse in random order without changing
+        /// (or persisting) the selected sort.</summary>
+        private async void PlexShuffle_Click(object sender, RoutedEventArgs e)
+        {
+            Telemetry.Track("plex_shuffle", new());
+            await LoadPlexBrowse(shuffle: true);
+        }
+
+        private async Task LoadPlexBrowse(bool shuffle = false)
         {
             if (_plexSection == null || _plexCategory == null) return;
 
@@ -1305,11 +1383,13 @@ namespace VideoPlayer
             int token = ++_plexLoadToken;
             ShowPlexLoading("Loading…");
 
+            var sort = shuffle ? PlexSortMode.Random : _plexSort;
+
             List<PlexItem> items;
             try
             {
                 items = await _plex.BrowseAsync(
-                    _plexSection.Key, _plexSection.Type, _plexCategory.View, _plexCategory.GenreId);
+                    _plexSection.Key, _plexSection.Type, _plexCategory.View, _plexCategory.GenreId, sort);
             }
             catch (Exception ex)
             {

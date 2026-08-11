@@ -113,6 +113,50 @@ var url = $"{_store.PlexBaseUrl}/library/sections/{Uri.EscapeDataString(sectionK
   <em>Never Watched</em> is fully server-side.
 </p>
 
+<h2>4. Sort order — user-selectable, server-side</h2>
+
+<p>
+  A <strong>sort dropdown</strong> and a one-shot <strong>shuffle</strong> button sit above the
+  results list (left of the list/tile view toggles). Sorting is done by <strong>Plex</strong> via
+  the <code>sort=</code> query parameter — the client never re-orders the returned list — so the
+  order is correct across the whole library, not just what happens to be loaded. The choice is
+  independent of the selected category and is remembered across sessions in
+  <code>AppSettings.PlexSort</code>.
+</p>
+
+<p>
+  The sort applies to the <strong>level-0 library list only</strong>. It is hidden (and not
+  applied) in global search mode and once you drill into a show or season, where the order is
+  fixed (seasons by number, episodes by broadcast order). <code>PlexSortMode</code> maps to a
+  Plex sort key in <code>BrowseAsync</code>:
+</p>
+
+<table>
+  <thead>
+    <tr><th>Sort option</th><th><code>PlexSortMode</code></th><th>Plex <code>sort=</code> key</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Default</td><td><code>Default</code></td><td>each view's natural order (see below)</td></tr>
+    <tr><td>Title (A–Z)</td><td><code>TitleAsc</code></td><td><code>titleSort:asc</code></td></tr>
+    <tr><td>Title (Z–A)</td><td><code>TitleDesc</code></td><td><code>titleSort:desc</code></td></tr>
+    <tr><td>Recently Added</td><td><code>RecentlyAdded</code></td><td><code>addedAt:desc</code></td></tr>
+    <tr><td>Year (Oldest)</td><td><code>YearAsc</code></td><td><code>originallyAvailableAt:asc</code></td></tr>
+    <tr><td>Year (Newest)</td><td><code>YearDesc</code></td><td><code>originallyAvailableAt:desc</code></td></tr>
+    <tr><td>Shuffle (🔀 button)</td><td><code>Random</code></td><td><code>random</code></td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>Default</strong> preserves each view's own ordering — <code>titleSort:asc</code> for
+  <em>All</em>/genres, <code>addedAt:desc</code> for <em>Recently Added</em>,
+  <code>lastViewedAt:desc</code> for <em>Recently Watched</em>. Any explicit choice overrides
+  that. <strong>Shuffle is one-shot</strong>: it re-fetches the current list with
+  <code>sort=random</code> a single time and is never persisted, so switching category or
+  reloading returns to the selected sort. Plex reshuffles server-side on each request; because
+  the client loads the whole section in one call there is no pagination to make the order
+  inconsistent.
+</p>
+
 <h2>Division of responsibility</h2>
 
 <table>
