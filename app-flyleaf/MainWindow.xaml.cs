@@ -447,6 +447,39 @@ namespace VideoPlayer
                 }
             });
 
+            // DIAGNOSTIC: the external-audio open fires its own completion event (not OpenCompleted),
+            // so its success/error was previously invisible. Dump every arg property via reflection
+            // (works without knowing the args type) plus the player's audio state, so we can tell
+            // whether the audio stream failed to open, opened-but-wasn't-selected, or opened muted.
+            _player.OpenExternalAudioStreamCompleted += (s, e) => Dispatcher.InvokeAsync(() =>
+            {
+                try
+                {
+                    var sb = new System.Text.StringBuilder("[Flyleaf] ExtAudioCompleted");
+                    foreach (var p in e.GetType().GetProperties())
+                    {
+                        object? val;
+                        try { val = p.GetValue(e); } catch { val = "<err>"; }
+                        var str = val?.ToString() ?? "null";
+                        // Scrub any URL down to its host+path (query carries signed tokens).
+                        if (str.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var q = str.IndexOf('?');
+                            if (q >= 0) str = str.Substring(0, q);
+                        }
+                        sb.Append($" {p.Name}={str}");
+                    }
+                    App.Log(sb.ToString());
+                    App.Log($"[Flyleaf] AudioState IsOpened={_player.Audio.IsOpened} " +
+                            $"Mute={_player.Audio.Mute} Volume={_player.Audio.Volume} " +
+                            $"ChannelsOut={_player.Audio.ChannelsOut} Streams={_player.Audio.Streams?.Count}");
+                }
+                catch (Exception ex)
+                {
+                    App.Log($"[Flyleaf] ExtAudioCompleted log error: {ex.Message}");
+                }
+            });
+
             _player.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(_player.Status))
@@ -2446,17 +2479,31 @@ namespace VideoPlayer
         private async Task<(string title, string videoUrl, string audioUrl)> ResolveWithYtDlpAsync(
             string url, bool audioOnly = false, bool? cookieOverride = null)
         {
-            // Audio-first for music (YT Music "art tracks" are audio-only); video-first otherwise.
+            // Prefer the adaptive video-only + audio pair FIRST. Two problems the naive selector hits:
+            //   1. YouTube's muxed/progressive streams top out at 360p, so a leading best[height<=N]
+            //      muxed selector silently caps playback at 360p. We want DASH video+audio for HD.
+            //   2. `ba` (best audio) resolves to itag 258 — 5.1-surround AAC — which FlyleafLib's
+            //      stereo render path drops to SILENCE. So we constrain audio to <=2 channels.
+            // yt-dlp emits two -g URLs (video, then audio); the second is attached via the
+            // external-audio path in OpenCompleted. Fall back to a capped muxed file, then anything.
             var fmt = audioOnly
-                ? "bestaudio/best"
-                : $"best[height<={_selectedHeight}]/bv*[height<={_selectedHeight}]+ba/best";
+                ? "ba[audio_channels<=2]/ba/best"
+                : $"bv*[height<={_selectedHeight}]+ba[audio_channels<=2]"
+                + $"/b[height<={_selectedHeight}][audio_channels<=2]"
+                + $"/bv*[height<={_selectedHeight}]+ba/b[height<={_selectedHeight}]/b";
+
+            // Sort so the height ceiling wins first (the quality menu's 4K/1440p picks must reach
+            // those resolutions), then prefer H.264 (avc1) over VP9/AV1 and AAC over Opus as
+            // same-resolution tie-breakers — the codecs FlyleafLib/FFmpeg decodes most reliably
+            // (AV1 in particular is heavy and can stutter under hardware acceleration).
+            const string sort = "res,vcodec:avc1,acodec:aac";
 
             // Resolve the cookie file once for this URL (Tether live cookies for the site,
             // manual export as fallback, none for YouTube). Shared by both yt-dlp calls.
             var cookieFile = await ResolveCookieFileForUrlAsync(url, cookieOverride);
 
             var titleTask  = RunYtDlp("--no-warnings --print \"%(title)s\"", url, cookieFile: cookieFile);
-            var streamTask = RunYtDlp($"--no-warnings -f \"{fmt}\" -g", url, cookieFile: cookieFile);
+            var streamTask = RunYtDlp($"--no-warnings -f \"{fmt}\" -S \"{sort}\" -g", url, cookieFile: cookieFile);
             await Task.WhenAll(titleTask, streamTask);
 
             var title = FirstLine(titleTask.Result);
