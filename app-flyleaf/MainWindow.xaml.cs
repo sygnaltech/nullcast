@@ -447,36 +447,25 @@ namespace VideoPlayer
                 }
             });
 
-            // DIAGNOSTIC: the external-audio open fires its own completion event (not OpenCompleted),
-            // so its success/error was previously invisible. Dump every arg property via reflection
-            // (works without knowing the args type) plus the player's audio state, so we can tell
-            // whether the audio stream failed to open, opened-but-wasn't-selected, or opened muted.
+            // A split-stream source attaches its audio only AFTER the video is already open and
+            // playing, so the audio demuxer starts at 0:00 while the video has buffered seconds
+            // ahead. It then grinds forward to catch up — the classic "silent for a while, then a
+            // burst of stutter as the audio merges" startup. A seek realigns both demuxers to the
+            // same point (which is why a manual seek always plays cleanly), so once the external
+            // audio finishes opening we snap to the current position to force that resync.
             _player.OpenExternalAudioStreamCompleted += (s, e) => Dispatcher.InvokeAsync(() =>
             {
                 try
                 {
-                    var sb = new System.Text.StringBuilder("[Flyleaf] ExtAudioCompleted");
-                    foreach (var p in e.GetType().GetProperties())
-                    {
-                        object? val;
-                        try { val = p.GetValue(e); } catch { val = "<err>"; }
-                        var str = val?.ToString() ?? "null";
-                        // Scrub any URL down to its host+path (query carries signed tokens).
-                        if (str.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var q = str.IndexOf('?');
-                            if (q >= 0) str = str.Substring(0, q);
-                        }
-                        sb.Append($" {p.Name}={str}");
-                    }
-                    App.Log(sb.ToString());
-                    App.Log($"[Flyleaf] AudioState IsOpened={_player.Audio.IsOpened} " +
-                            $"Mute={_player.Audio.Mute} Volume={_player.Audio.Volume} " +
-                            $"ChannelsOut={_player.Audio.ChannelsOut} Streams={_player.Audio.Streams?.Count}");
+                    var ms = (int)(_player.CurTime / TimeSpan.TicksPerMillisecond);
+                    App.Log($"[Flyleaf] External audio opened; resyncing at {ms}ms " +
+                            $"(IsOpened={_player.Audio.IsOpened}).");
+                    // SeekAccurate lands on the exact frame so audio and video align tightly.
+                    _player.SeekAccurate(ms);
                 }
                 catch (Exception ex)
                 {
-                    App.Log($"[Flyleaf] ExtAudioCompleted log error: {ex.Message}");
+                    App.Log($"[Flyleaf] External audio resync failed: {ex.Message}");
                 }
             });
 
