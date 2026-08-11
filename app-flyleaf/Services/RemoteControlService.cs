@@ -217,6 +217,14 @@ namespace VideoPlayer.Services
                         WriteJson(res, 200, await _win.ApiStopAsync());
                         return;
 
+                    case "/next" when method == "POST":
+                        WriteJson(res, 200, await _win.ApiNextAsync());
+                        return;
+
+                    case "/previous" when method == "POST":
+                        WriteJson(res, 200, await _win.ApiPreviousAsync());
+                        return;
+
                     case "/seek" when method == "POST":
                     {
                         var body = await ReadBodyAsync<SeekRequest>(req);

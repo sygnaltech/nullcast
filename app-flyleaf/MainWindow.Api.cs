@@ -217,6 +217,38 @@ namespace VideoPlayer
             return ApiSnapshot();
         });
 
+        /// <summary>Advance to the next queue entry / episode, mirroring the transport Next button.</summary>
+        public Task<StateSnapshot> ApiNextAsync() => OnUiAsync(async () =>
+        {
+            if (_queueKind == QueueKind.Plex) StepPlex(+1);
+            else                              await StepFlatAsync(+1);
+            ApiNotifyItemChanged();
+            return ApiSnapshot();
+        });
+
+        /// <summary>
+        /// Go to the previous queue entry / episode, mirroring the transport Previous button — which
+        /// (for flat queues) first restarts the current track when we're more than 3s in, and
+        /// restarts in place when already at the head of the queue.
+        /// </summary>
+        public Task<StateSnapshot> ApiPreviousAsync() => OnUiAsync(async () =>
+        {
+            if (_queueKind == QueueKind.Plex)
+            {
+                StepPlex(-1);
+            }
+            else if (_player != null && _player.CurTime > 3 * 10_000_000L)
+            {
+                _player.SeekAccurate(0);
+            }
+            else if (!await StepFlatAsync(-1))
+            {
+                _player?.SeekAccurate(0);   // already at the start of the queue → restart
+            }
+            ApiNotifyItemChanged();
+            return ApiSnapshot();
+        });
+
         public Task<StateSnapshot> ApiSeekAsync(long? positionMs, long? deltaMs) => OnUi(() =>
         {
             if (_player != null)

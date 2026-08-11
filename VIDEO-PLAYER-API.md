@@ -106,6 +106,8 @@ All commands are `POST` and return the resulting [state document](#2-state-model
 | `POST /pause` | *(none)* | Pause. |
 | `POST /playpause` | *(none)* | Toggle play/pause. |
 | `POST /stop` | *(none)* | Stop and clear now-playing. |
+| `POST /next` | *(none)* | Skip to the next queue entry / TV episode. |
+| `POST /previous` | *(none)* | Go to the previous entry / episode (restarts the current item first when >3s in, matching the transport button). |
 | `POST /seek` | `{ "positionMs": n }` **or** `{ "deltaMs": ±n }` | Absolute or relative seek (clamped to duration). |
 | `POST /volume` | `{ "level": 0–100 }` and/or `{ "delta": ±n }` and/or `{ "mute": bool }` | Set volume / adjust / mute. |
 
@@ -118,6 +120,10 @@ curl -X POST http://127.0.0.1:47893/api/v1/play
 
 # Toggle
 curl -X POST http://127.0.0.1:47893/api/v1/playpause
+
+# Skip to the next / previous track or episode
+curl -X POST http://127.0.0.1:47893/api/v1/next
+curl -X POST http://127.0.0.1:47893/api/v1/previous
 
 # Jump to 10:00, then nudge back 15s
 curl -X POST http://127.0.0.1:47893/api/v1/seek   -H 'Content-Type: application/json' -d '{"positionMs":600000}'
@@ -300,6 +306,8 @@ Non-2xx responses use a consistent envelope:
 | POST | `/api/v1/pause` | yes | — | state document |
 | POST | `/api/v1/playpause` | yes | — | state document |
 | POST | `/api/v1/stop` | yes | — | state document |
+| POST | `/api/v1/next` | yes | — | state document |
+| POST | `/api/v1/previous` | yes | — | state document |
 | POST | `/api/v1/seek` | yes | `SeekRequest` | state document |
 | POST | `/api/v1/volume` | yes | `VolumeRequest` | state document |
 
@@ -330,7 +338,9 @@ Deliberately **not** in this API (candidates for future work):
 - **Internet / cross-NAT control.** A cloud-relayed path (a command queue in the Sygnal
   Playlist Cloudflare service, reusing the existing OAuth identity) is the intended future
   route for controlling the player from outside the LAN.
-- **Queue / playlist management** (enqueue, reorder, next/previous across a workspace).
+- **Queue / playlist management** (enqueue, reorder, jump to an arbitrary queue position).
+  Stepping the *existing* queue is supported via `POST /next` and `POST /previous`; building
+  or rearranging it over the API is not.
 - **Media search** over the API (searching Plex or bookmarks). Callers pass identifiers they
   already have.
 - **Per-caller identity** beyond a single shared bearer token.
