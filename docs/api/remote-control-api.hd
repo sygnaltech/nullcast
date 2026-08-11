@@ -1,0 +1,146 @@
+---
+id: MHw5A0aiwBspHE07Um2e51
+version: 2
+title: Remote Control API — Capabilities
+date: 2026-08-11
+description: What the Nullcast local Remote Control API can do — transport control, playing by reference, and reading/subscribing to playback state — and what it deliberately can't.
+tags: [api, remote-control, playback]
+---
+
+# Remote Control API — Capabilities
+
+Nullcast (`app-flyleaf/`) exposes a **local HTTP control surface** so other applications on
+the machine — voice agents, a control panel, automation scripts — can drive playback, tell
+the player what to play, and read or subscribe to the current playback state.
+
+This page is a **capability overview**. The exhaustive request/response reference (bodies,
+error envelopes, configuration, SSE frame format) lives in
+[VIDEO-PLAYER-API.md](../../VIDEO-PLAYER-API.md); implementation is HAVOC **F-654**
+(`Services/RemoteControlService.cs`, `MainWindow.Api.cs`).
+
+> [!NOTE]
+> The API only exists while the player app is running, and is enabled by default. It binds
+> loopback-only unless LAN mode is explicitly turned on. All times are **milliseconds**; all
+> timestamps are **Unix epoch milliseconds**.
+
+## At a glance
+
+| | |
+| --- | --- |
+| Transport | Plain HTTP (JSON) on `localhost`, plus a Server-Sent-Events stream for live state |
+| Base URL (default) | `http://127.0.0.1:47893/api/v1` |
+| Auth (default) | none on loopback; `Authorization: Bearer <token>` required in LAN mode |
+| Protocol | `v1` |
+
+## What it can do
+
+The API groups into four capability areas.
+
+### 1. Transport control
+
+Drive the currently loaded media, mirroring the on-screen transport bar. Every command
+returns the resulting [state document](#4-read--subscribe-to-state) so the caller learns the
+effect in one round-trip.
+
+| Capability | Endpoint | Notes |
+| --- | --- | --- |
+| Resume | `POST /play` *(no body)* | Resume if paused. |
+| Pause | `POST /pause` | |
+| Toggle play/pause | `POST /playpause` | |
+| Stop | `POST /stop` | Stops and clears now-playing. |
+| Next | `POST /next` | Skip to the next queue entry / TV episode. |
+| Previous | `POST /previous` | Previous entry / episode; restarts the current item first when >3s in, matching the transport button. |
+| Seek | `POST /seek` | Absolute (`positionMs`) or relative (`deltaMs`), clamped to duration. |
+| Volume / mute | `POST /volume` | Set (`level` 0–100), adjust (`delta`), and/or `mute`. |
+
+> [!NOTE]
+> **Next/Previous step the existing queue.** They respect the same flat-vs-Plex queue split
+> as the UI buttons, so they walk playlist/podcast/YouTube-Music tracks or Plex TV episodes
+> (across seasons) depending on what's playing. They do not build or reorder a queue.
+
+### 2. Play by reference
+
+Start playback of a specific item by handing the player an identifier it can resolve. An
+optional `startPositionMs` sets the resume point.
+
+| Source `type` | Required field | Resolved via |
+| --- | --- | --- |
+| `youtube` | `url` (+ optional `quality`) | yt-dlp |
+| `url` | `url` | Direct FFmpeg open (falls back to yt-dlp for page URLs) |
+| `file` | `path` | Direct FFmpeg open |
+| `plex` | `ratingKey` | Plex Direct Play (server must be configured in-app) |
+| `bookmark` | `muid` | Sygnal Playlist bookmark (uses saved resume unless overridden) |
+
+Resolution runs **asynchronously**: a `POST /play` with a `source` returns quickly and the
+state transitions `loading` → `playing`. Subscribe to `/events` (or poll `/state`) to observe
+it. The API reuses the same play paths as the UI — no parallel playback logic.
+
+### 3. Read & subscribe to state
+
+| Capability | Endpoint | Returns |
+| --- | --- | --- |
+| Discovery / health | `GET /ping` | `{app, version, protocol, state}` — unauthenticated |
+| Current state | `GET /state` | The canonical state document |
+| Live state stream | `GET /events` | `text/event-stream`; a `state` frame on every meaningful change |
+
+The **state document** is returned by every command and by `GET /state`, so reads and writes
+share one shape:
+
+| Field | Meaning |
+| --- | --- |
+| `state` | `idle` \| `loading` \| `playing` \| `paused` \| `stopped` \| `ended` |
+| `item` | now-playing (`type`, `title`, `sourceUrl`, `muid`, `ratingKey`); `null` when idle |
+| `positionMs` / `durationMs` | Playback position and length |
+| `volume` / `muted` | `0–100` and mute flag |
+| `speed` / `fullscreen` / `workspaceId` | Playback rate, fullscreen flag, active workspace |
+| `app` / `ts` | App/protocol info and the snapshot's epoch-ms timestamp |
+
+Over `/events`, transport, now-playing, and volume/mute changes are pushed immediately;
+position ticks are throttled to about **1 per second**. A Plex `sourceUrl` is always the
+stable `plex://<ratingKey>` form — the server token is never exposed.
+
+### 4. Security & configuration
+
+| Capability | Behaviour |
+| --- | --- |
+| Safe by default | Loopback bind, no token, no CORS headers unless configured. |
+| LAN access | Opt-in (`bind: "lan"`); always token-guarded; a failed LAN bind degrades to loopback rather than failing open. |
+| Token auth | `Authorization: Bearer <token>` on every request except `GET /ping`; token stored DPAPI-encrypted at rest. |
+| Additive | When disabled, the listener never starts and playback behaves exactly as before. |
+
+Configuration lives in `%AppData%\VideoPlayer\api.json`; changes take effect on app restart.
+See [VIDEO-PLAYER-API.md](../../VIDEO-PLAYER-API.md) §6 for the full config schema and the LAN
+URL-ACL steps.
+
+## What it deliberately can't do
+
+These are out of scope for the current API (candidates for future work):
+
+- **Internet / cross-NAT control.** A cloud-relayed command path (via the Sygnal Playlist
+  Cloudflare service, reusing the existing OAuth identity) is the intended future route.
+- **Queue / playlist management** — enqueue, reorder, or jump to an arbitrary queue position.
+  Stepping the *existing* queue works (`/next`, `/previous`); building or rearranging it does not.
+- **Media search** over the API. Callers pass identifiers they already have.
+- **Per-caller identity** beyond a single shared bearer token.
+
+## Quick reference
+
+```sh
+# Health check (no auth)
+curl http://127.0.0.1:47893/api/v1/ping
+
+# Transport
+curl -X POST http://127.0.0.1:47893/api/v1/playpause
+curl -X POST http://127.0.0.1:47893/api/v1/next
+curl -X POST http://127.0.0.1:47893/api/v1/previous
+curl -X POST http://127.0.0.1:47893/api/v1/seek   -H 'Content-Type: application/json' -d '{"deltaMs":-15000}'
+curl -X POST http://127.0.0.1:47893/api/v1/volume -H 'Content-Type: application/json' -d '{"level":50}'
+
+# Play a specific item
+curl -X POST http://127.0.0.1:47893/api/v1/play -H 'Content-Type: application/json' -d '{
+  "source": { "type": "plex", "ratingKey": "12345" }
+}'
+
+# Live state
+curl -N http://127.0.0.1:47893/api/v1/events
+```
