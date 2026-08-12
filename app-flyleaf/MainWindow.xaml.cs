@@ -54,8 +54,9 @@ namespace VideoPlayer
             (360,  "360p"),
         };
 
-        // Local playback history
-        private readonly HistoryService _history = new();
+        // Local playback history + "watch later" queue (both local-only, never synced)
+        private readonly HistoryService    _history    = new();
+        private readonly WatchQueueService _watchQueue = new();
 
         // Click disambiguation + auto-hide overlay controls
         private DispatcherTimer _clickTimer;
@@ -85,6 +86,15 @@ namespace VideoPlayer
         private MenuItem            _toggleMenuItem;
         private ContextMenu         _historyContextMenu;
         private HistoryEntry        _historyContextMenuTarget;
+        private ContextMenu         _queueContextMenu;
+        private QueueEntry          _queueContextMenuTarget;
+
+        // Which History-panel sub-tab is showing (History vs. Queue)
+        private enum HistorySubTab { History, Queue }
+        private HistorySubTab _historySubTab = HistorySubTab.History;
+
+        // Drag state for the canvas "Queue" drop zone (top-right sixth)
+        private bool _dragInQueueZone;
 
         // App settings
         private static readonly string SettingsPath = Path.Combine(
@@ -148,6 +158,7 @@ namespace VideoPlayer
 
         public ObservableCollection<Bookmark> PlaylistItems { get; } = new();
         public ObservableCollection<HistoryEntry> HistoryItems { get; } = new();
+        public ObservableCollection<QueueEntry> QueueItems { get; } = new();
         public ObservableCollection<PlexItem> PlexItems { get; } = new();
 
         // Podcasts — the results box shows either shows (search results) or the episodes of
@@ -235,6 +246,19 @@ namespace VideoPlayer
 
             HistoryBox.ContextMenu = _historyContextMenu;
             HistoryBox.PreviewMouseRightButtonDown += HistoryBox_PreviewMouseRightButtonDown;
+
+            // Queue right-click menu (Remove only), same themed look.
+            var queueRemoveItem = new MenuItem
+            {
+                Header = "Remove",
+                Icon   = MakeMenuIcon(IconTrash),
+            };
+            queueRemoveItem.Click += QueueItem_Remove_Click;
+            _queueContextMenu = new ContextMenu { Style = contextMenuStyle };
+            _queueContextMenu.Items.Add(queueRemoveItem);
+
+            QueueBox.ContextMenu = _queueContextMenu;
+            QueueBox.PreviewMouseRightButtonDown += QueueBox_PreviewMouseRightButtonDown;
 
             // Video right-click menu (styled in XAML resources).
             _videoContextMenu = (ContextMenu)FindResource("VideoContextMenu");
@@ -369,8 +393,9 @@ namespace VideoPlayer
                     FlyleafPlayer.Overlay.MouseRightButtonUp   += VideoArea_MouseRightButtonUp;
                     FlyleafPlayer.Overlay.MouseWheel           += VideoArea_MouseWheel;
                     FlyleafPlayer.Overlay.AllowDrop = true;
-                    FlyleafPlayer.Overlay.DragOver += VideoArea_DragOver;
-                    FlyleafPlayer.Overlay.Drop     += VideoArea_Drop;
+                    FlyleafPlayer.Overlay.DragOver  += VideoArea_DragOver;
+                    FlyleafPlayer.Overlay.DragLeave += VideoArea_DragLeave;
+                    FlyleafPlayer.Overlay.Drop      += VideoArea_Drop;
                 };
                 FlyleafPlayer.SurfaceCreated += (ps, pe) =>
                 {
@@ -382,8 +407,9 @@ namespace VideoPlayer
                     // The surface HWND is the real OLE drop target over the video, so
                     // register our handler here (Flyleaf's own OpenOnDrop is disabled).
                     FlyleafPlayer.Surface.AllowDrop = true;
-                    FlyleafPlayer.Surface.DragOver += VideoArea_DragOver;
-                    FlyleafPlayer.Surface.Drop     += VideoArea_Drop;
+                    FlyleafPlayer.Surface.DragOver  += VideoArea_DragOver;
+                    FlyleafPlayer.Surface.DragLeave += VideoArea_DragLeave;
+                    FlyleafPlayer.Surface.Drop      += VideoArea_Drop;
                 };
 
                 // Pin to all virtual desktops
@@ -613,6 +639,8 @@ namespace VideoPlayer
 
             await _history.LoadAsync();
             RefreshHistoryView();
+            await _watchQueue.LoadAsync();
+            RefreshQueueView();
 
             var tokens = await _auth.LoadTokensAsync();
             if (tokens != null && !string.IsNullOrEmpty(tokens.AccessToken))
@@ -775,7 +803,7 @@ namespace VideoPlayer
             StyleTab(PodcastsTabButton, tab == SidebarTab.Podcasts, accent, primary, muted);
             StyleTab(YtMusicTabButton,  tab == SidebarTab.YtMusic,  accent, primary, muted);
 
-            if (tab == SidebarTab.History) RefreshHistoryView();
+            if (tab == SidebarTab.History) ApplyHistorySubTab();
             if (tab == SidebarTab.Plex)    EnterPlexTab();
             if (tab == SidebarTab.YtMusic) EnterYtMusicTab();
         }
@@ -787,8 +815,35 @@ namespace VideoPlayer
         }
 
         // ──────────────────────────────────────────────────────
-        // History
+        // History  (two sub-tabs: History / Queue)
         // ──────────────────────────────────────────────────────
+
+        private void ShowHistorySubTab_Click(object sender, RoutedEventArgs e) => SelectHistorySubTab(HistorySubTab.History);
+        private void ShowQueueSubTab_Click(object sender, RoutedEventArgs e)   => SelectHistorySubTab(HistorySubTab.Queue);
+
+        private void SelectHistorySubTab(HistorySubTab sub)
+        {
+            _historySubTab = sub;
+            ApplyHistorySubTab();
+        }
+
+        /// <summary>Show the active History/Queue sub-tab, style its underline, and refresh it.</summary>
+        private void ApplyHistorySubTab()
+        {
+            bool queue = _historySubTab == HistorySubTab.Queue;
+
+            HistoryPane.Visibility = queue ? Visibility.Collapsed : Visibility.Visible;
+            QueuePane.Visibility   = queue ? Visibility.Visible   : Visibility.Collapsed;
+
+            var accent  = (Brush)FindResource("AccentBrush");
+            var primary = (Brush)FindResource("TextPrimaryBrush");
+            var muted   = (Brush)FindResource("TextMutedBrush");
+            StyleTab(HistorySubTabButton, !queue, accent, primary, muted);
+            StyleTab(QueueSubTabButton,    queue, accent, primary, muted);
+
+            if (queue) RefreshQueueView();
+            else       RefreshHistoryView();
+        }
 
         private void RefreshHistoryView()
         {
@@ -801,6 +856,85 @@ namespace VideoPlayer
         private void HistorySearch_TextChanged(object sender, TextChangedEventArgs e)
         {
             RefreshHistoryView();
+        }
+
+        // ── Queue sub-tab ──────────────────────────────────────
+
+        private void RefreshQueueView()
+        {
+            var query = QueueSearchBox?.Text ?? "";
+            QueueItems.Clear();
+            foreach (var entry in _watchQueue.Search(query))
+                QueueItems.Add(entry);
+
+            // Empty-state hint only when the queue is genuinely empty (not just filtered out).
+            if (QueueEmptyHint != null)
+                QueueEmptyHint.Visibility = string.IsNullOrWhiteSpace(query) && QueueItems.Count == 0
+                    ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void QueueSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RefreshQueueView();
+        }
+
+        private async void QueueBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count == 0) return;
+            if (QueueBox.SelectedItem is QueueEntry entry && !string.IsNullOrEmpty(entry.Url))
+            {
+                _activeMuid = null;
+                _seekOnPlay = null;
+
+                // Plex queue entries are stored as plex://<ratingKey> — re-resolve against the server.
+                if (entry.Url.StartsWith("plex://", StringComparison.OrdinalIgnoreCase))
+                {
+                    await PlayPlexFromHistory(entry.Url);
+                    return;
+                }
+
+                Telemetry.Track("media_play", new()
+                {
+                    ["source"] = "queue",
+                    ["title"]  = entry.Title ?? "",
+                    ["url"]    = entry.Url,
+                });
+                await PlayUrl(entry.Url);
+            }
+        }
+
+        private void QueueBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var element = e.OriginalSource as DependencyObject;
+            while (element != null && element is not ListBoxItem)
+                element = VisualTreeHelper.GetParent(element);
+
+            _queueContextMenuTarget = (element as ListBoxItem)?.DataContext as QueueEntry;
+
+            e.Handled = true;
+
+            if (_queueContextMenuTarget != null)
+                _queueContextMenu.IsOpen = true;
+        }
+
+        private void QueueItem_Remove_Click(object sender, RoutedEventArgs e)
+        {
+            var entry = _queueContextMenuTarget;
+            if (entry == null) return;
+            _watchQueue.Delete(entry);
+            QueueItems.Remove(entry);
+            if (QueueItems.Count == 0)
+                RefreshQueueView();   // re-evaluate the empty-state hint
+        }
+
+        /// <summary>Queue a dropped URL to watch later, refreshing the Queue view if it's showing.</summary>
+        private void AddToWatchQueue(string url, string title)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return;
+            _watchQueue.Add(url, title);
+            Telemetry.Track("queue_added", new() { ["title"] = title ?? "", ["url"] = url });
+            if (HistoryContent.Visibility == Visibility.Visible && _historySubTab == HistorySubTab.Queue)
+                RefreshQueueView();
         }
 
         private async void HistoryBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2823,44 +2957,158 @@ namespace VideoPlayer
             LogDrag("VideoArea", e);
             e.Effects = DragDropEffects.None;
 
-            if (e.Data.GetDataPresent(DataFormats.Text))
+            if (IsPlayableDrag(e))
             {
-                var text = e.Data.GetData(DataFormats.Text) as string;
-                if (IsVideoUrl(text))
-                    e.Effects = DragDropEffects.Copy;
-            }
-            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
-            {
-                var text = e.Data.GetData(DataFormats.UnicodeText) as string;
-                if (IsVideoUrl(text))
-                    e.Effects = DragDropEffects.Copy;
+                e.Effects = DragDropEffects.Copy;
+                // Reveal the top-right "Queue" zone (its own drop target) for the drag.
+                ShowQueueZone();
             }
 
             e.Handled = true;
         }
 
+        private void VideoArea_DragLeave(object sender, DragEventArgs e)
+        {
+            // Do NOT close the zone here: crossing from the surface into the popup fires this
+            // (leaving the surface HWND), and closing would yank the drop target out from under
+            // the pointer. The inactivity timer closes the zone once the drag truly leaves/ends.
+            e.Handled = true;
+        }
+
         private async void VideoArea_Drop(object sender, DragEventArgs e)
         {
+            // A drop that reaches the Flyleaf surface/overlay is always "play now" — the Queue
+            // zone is a separate drop target that handles its own drops (QueueZone_Drop).
             App.Log("[Drop] VideoArea_Drop fired");
-            string url = null;
+            HideQueueZone();
 
+            string raw = null;
             if (e.Data.GetDataPresent(DataFormats.Text))
-                url = e.Data.GetData(DataFormats.Text) as string;
+                raw = e.Data.GetData(DataFormats.Text) as string;
             else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
-                url = e.Data.GetData(DataFormats.UnicodeText) as string;
+                raw = e.Data.GetData(DataFormats.UnicodeText) as string;
 
-            if (!string.IsNullOrEmpty(url))
-            {
-                url = ExtractFirstUrl(url);
-                if (!string.IsNullOrEmpty(url))
-                {
-                    _activeMuid = null;
-                    _seekOnPlay = null;
-                    Telemetry.Track("media_play", new() { ["source"] = "url", ["entry"] = "drop", ["url"] = url ?? "" });
-                    await PlayUrl(url);
-                }
-            }
+            if (string.IsNullOrEmpty(raw)) return;
+            var url = ExtractFirstUrl(raw);
+            if (string.IsNullOrEmpty(url)) return;
+
+            _activeMuid = null;
+            _seekOnPlay = null;
+            Telemetry.Track("media_play", new() { ["source"] = "url", ["entry"] = "drop", ["url"] = url ?? "" });
+            await PlayUrl(url);
         }
+
+        // ── Canvas "Queue" drop zone (top-right sixth) ─────────────────────
+        //
+        // The zone is a top-level Popup whose Border is a genuine OLE drop target. Dropping there
+        // lands on our own window — the Flyleaf surface never sees it, so queueing leaves the
+        // playing video untouched. (Dropping a URL on the surface makes FlyleafHost tear down the
+        // current media, which is fine for "play now" but must be avoided for "watch later".)
+
+        private DispatcherTimer _queueZoneTimer;
+
+        private bool IsPlayableDrag(DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent(DataFormats.Text))
+                return IsVideoUrl(e.Data.GetData(DataFormats.Text) as string);
+            if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+                return IsVideoUrl(e.Data.GetData(DataFormats.UnicodeText) as string);
+            return false;
+        }
+
+        // ── Zone drop target ───────────────────────────────────────────────
+
+        private void QueueZone_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = IsPlayableDrag(e) ? DragDropEffects.Copy : DragDropEffects.None;
+            ShowQueueZone();                 // keepalive (restarts the inactivity timer)
+            UpdateQueueZoneVisual(true);     // pointer is over the zone → highlight
+            e.Handled = true;
+        }
+
+        private void QueueZone_DragLeave(object sender, DragEventArgs e)
+        {
+            // Pointer left the zone (back onto the surface, or off-window). Drop the highlight
+            // but keep the popup open — the surface's DragOver / the timer manage its lifetime.
+            UpdateQueueZoneVisual(false);
+            e.Handled = true;
+        }
+
+        private void QueueZone_Drop(object sender, DragEventArgs e)
+        {
+            HideQueueZone();
+
+            string raw = null;
+            if (e.Data.GetDataPresent(DataFormats.Text))
+                raw = e.Data.GetData(DataFormats.Text) as string;
+            else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+                raw = e.Data.GetData(DataFormats.UnicodeText) as string;
+
+            e.Handled = true;
+            if (string.IsNullOrEmpty(raw)) return;
+            var url = ExtractFirstUrl(raw);
+            if (string.IsNullOrEmpty(url)) return;
+
+            // "Watch later": queue it, leave whatever's playing completely alone.
+            var title = ExtractTitleFromDragData(e.Data);
+            App.Log($"[Drop] Queued (watch later): {url}");
+            AddToWatchQueue(url, title);
+        }
+
+        // ── Zone show/hide ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Open (or keep alive) the "Queue" overlay, sized/positioned to the top-right sixth
+        /// (right ⅓ × top ½) of the video area. Deliberately small so this layered popup only
+        /// overlaps that corner of the Flyleaf surface. Each call restarts an inactivity timer
+        /// that hides the zone once the drag stops delivering events (left the window / ended).
+        /// </summary>
+        private void ShowQueueZone()
+        {
+            if (QueueDropZonePopup == null) return;
+
+            if (!QueueDropZonePopup.IsOpen)
+            {
+                double w = VideoContainer.ActualWidth, h = VideoContainer.ActualHeight;
+                if (w <= 0 || h <= 0) return;
+
+                // Border carries a 10px margin all round; subtract it so the card sits inside
+                // the top-right sixth instead of spilling past the video's right edge.
+                QueueZoneBorder.Width  = Math.Max(0, w / 3.0 - 20);
+                QueueZoneBorder.Height = Math.Max(0, h / 2.0 - 20);
+                QueueDropZonePopup.HorizontalOffset = w * (2.0 / 3.0);
+                QueueDropZonePopup.VerticalOffset   = 0;
+                QueueDropZonePopup.IsOpen = true;
+            }
+
+            if (_queueZoneTimer == null)
+            {
+                _queueZoneTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                _queueZoneTimer.Tick += (s, e) => HideQueueZone();
+            }
+            _queueZoneTimer.Stop();
+            _queueZoneTimer.Start();
+        }
+
+        private void HideQueueZone()
+        {
+            _queueZoneTimer?.Stop();
+            if (QueueDropZonePopup != null && QueueDropZonePopup.IsOpen)
+                QueueDropZonePopup.IsOpen = false;
+            _dragInQueueZone = false;
+        }
+
+        /// <summary>Brighten the zone when the pointer is hovering inside it.</summary>
+        private void UpdateQueueZoneVisual(bool inside)
+        {
+            if (QueueZoneBorder == null || inside == _dragInQueueZone) return;
+            _dragInQueueZone = inside;
+            QueueZoneBorder.Background      = inside ? _queueZoneFillActive : _queueZoneFillIdle;
+            QueueZoneBorder.BorderThickness = new Thickness(inside ? 3 : 2);
+        }
+
+        private static readonly Brush _queueZoneFillIdle   = new SolidColorBrush(Color.FromArgb(0x26, 0x00, 0x00, 0x00));
+        private static readonly Brush _queueZoneFillActive = new SolidColorBrush(Color.FromArgb(0x59, 0x7D, 0x97, 0xFF));
 
         private void PlaylistArea_DragOver(object sender, DragEventArgs e)
         {
