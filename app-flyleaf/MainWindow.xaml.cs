@@ -3224,7 +3224,7 @@ namespace VideoPlayer
                             if (name.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
                                 name = name[..^4].Trim();
                             if (!string.IsNullOrEmpty(name))
-                                return StripYouTubeSuffix(name);
+                                return CleanDraggedTitle(name);
                         }
                     }
                 }
@@ -3243,7 +3243,7 @@ namespace VideoPlayer
                         {
                             var title = match.Groups[1].Value.Trim();
                             if (!string.IsNullOrEmpty(title))
-                                return StripYouTubeSuffix(title);
+                                return CleanDraggedTitle(title);
                         }
                     }
                 }
@@ -3253,10 +3253,26 @@ namespace VideoPlayer
             return null;
         }
 
-        private static string StripYouTubeSuffix(string title)
+        // Leading notification-count badge browsers bake into the tab/document title, e.g.
+        // "(3) Some Video" — the number is unread-count cruft, not part of the video's name.
+        // Handles one or more, tolerating surrounding whitespace: "(3) ", " (12) (1) ".
+        // 1–3 digits only, so a leading 4-digit year like "(2024) …" is left intact.
+        private static readonly Regex LeadingCountBadge = new(@"^\s*(?:\(\d{1,3}\)\s*)+", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Clean a title lifted from browser drag data: strip the leading "(N)" unread-count
+        /// badge and the trailing " - YouTube" site suffix. Shared by every drop target
+        /// (playlist, queue, canvas) so dragged titles are consistently de-crufted.
+        /// </summary>
+        private static string CleanDraggedTitle(string title)
         {
+            if (string.IsNullOrWhiteSpace(title)) return null;
+
+            title = LeadingCountBadge.Replace(title, "");
             if (title.EndsWith(" - YouTube", StringComparison.OrdinalIgnoreCase))
-                title = title[..^" - YouTube".Length].Trim();
+                title = title[..^" - YouTube".Length];
+
+            title = title.Trim();
             return string.IsNullOrEmpty(title) ? null : title;
         }
 
