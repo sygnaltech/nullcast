@@ -2376,7 +2376,7 @@
                Placement="Relative"
                AllowsTransparency="True"
                StaysOpen="True"
-               Focusable="False"/>
+               Focusable="True"/>
 
         <!-- ══════════════════════════════════════════════════════
              Ctrl+K global search palette. A top-level Popup (like the
