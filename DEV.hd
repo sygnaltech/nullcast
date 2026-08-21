@@ -10,28 +10,39 @@ version: 2
 Or from your IDE:
 
 -   **F5** — build + run with debugger
-    
+
 -   **Ctrl+F5** — build + run without debugger
-    
+
 -   **Ctrl+Shift+B** — build only
-    
+
 
 ```
 dotnet run --project app-flyleaf                # Debug
 dotnet run --project app-flyleaf -c Release     # Release
 ```
 
-<p></p>
 
-<p></p>
 
-<p></p>
 
-<p></p>
 
 ```
 dotnet build app-flyleaf/VideoPlayer.csproj
 ```
+
+
+
+# Update yt-dlp
+
+```
+& "D:\Projects\Apps\nullcast\app-flyleaf\bin\Debug\net8.0-windows\yt-dlp.exe" -U
+```
+
+
+```
+& "D:\Projects\Apps\nullcast\app-flyleaf\bin\Release\net8.0-windows\yt-dlp.exe" -U
+```
+
+<p></p>
 
 <p></p>
 

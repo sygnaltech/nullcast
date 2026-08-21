@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -34,6 +35,7 @@ namespace VideoPlayer
         private bool _isDraggingSlider;
         private DispatcherTimer _timer;
         private string _ytdlpPath;
+        private string _denoPath;      // bundled JS runtime yt-dlp needs for YouTube's full client set
         private bool _ytdlpReady;
 
         // Quality selection
@@ -288,6 +290,7 @@ namespace VideoPlayer
             {
                 var appDir = AppDomain.CurrentDomain.BaseDirectory;
                 _ytdlpPath = Path.Combine(appDir, "yt-dlp.exe");
+                _denoPath  = Path.Combine(appDir, "deno.exe");
 
                 if (!File.Exists(_ytdlpPath))
                 {
@@ -301,6 +304,11 @@ namespace VideoPlayer
                 // Self-heal a stale binary in the background (non-blocking, best-effort) so
                 // the "your yt-dlp is older than 90 days" warning never resurfaces.
                 _ = MaybeUpdateYtDlpAsync();
+
+                // Ensure the bundled JS runtime is present (also background, best-effort).
+                // Without it yt-dlp can't solve YouTube's signature challenge and quietly
+                // falls back to limited clients that fail on a growing set of videos.
+                _ = EnsureDenoRuntimeAsync();
             }
             catch (Exception ex)
             {
@@ -361,6 +369,60 @@ namespace VideoPlayer
             using var client = new HttpClient();
             var bytes = await client.GetByteArrayAsync(url);
             await File.WriteAllBytesAsync(targetPath, bytes);
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Deno JS runtime (for YouTube extraction)
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// yt-dlp now needs a JavaScript runtime to solve YouTube's signature/n-sig challenge
+        /// for the full web/tv clients; without one it prints a deprecation warning and quietly
+        /// falls back to weaker clients (e.g. ANDROID_VR) that YouTube blocks for a growing set of
+        /// videos — the "YouTube stopped working" symptom. yt-dlp auto-detects a <c>deno.exe</c>
+        /// sitting in the SAME folder as <c>yt-dlp.exe</c>, so we bundle one there on first run.
+        /// Best-effort and non-blocking: playback still works via the fallback until it lands, and
+        /// a failed download simply retries on the next launch.
+        /// </summary>
+        private async Task EnsureDenoRuntimeAsync()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_denoPath) || File.Exists(_denoPath)) return;
+
+                App.Log("[deno] No JS runtime found — downloading Deno (first run only).");
+                await DownloadDenoAsync(_denoPath);
+                App.Log("[deno] Deno runtime ready; YouTube extraction can use the full client set.");
+            }
+            catch (Exception ex)
+            {
+                App.Log($"[deno] Runtime setup failed (YouTube falls back to limited clients): {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Downloads the latest Deno Windows x64 release and extracts just <c>deno.exe</c> next to
+        /// yt-dlp. The release ships as a zip containing a single <c>deno.exe</c>; we pull that one
+        /// entry out via a temp file so a half-written binary never sits beside yt-dlp.
+        /// </summary>
+        private async Task DownloadDenoAsync(string targetPath)
+        {
+            const string url =
+                "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip";
+
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+            var bytes = await client.GetByteArrayAsync(url);
+
+            using var zip = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+            var entry = zip.GetEntry("deno.exe")
+                ?? zip.Entries.FirstOrDefault(e =>
+                       e.Name.Equals("deno.exe", StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+                throw new Exception("deno.exe not found in the Deno release archive.");
+
+            var tmp = targetPath + ".tmp";
+            entry.ExtractToFile(tmp, overwrite: true);
+            File.Move(tmp, targetPath, overwrite: true);
         }
 
         private void InitializeFlyleaf()
