@@ -262,6 +262,10 @@ namespace VideoPlayer
             QueueBox.ContextMenu = _queueContextMenu;
             QueueBox.PreviewMouseRightButtonDown += QueueBox_PreviewMouseRightButtonDown;
 
+            // "Add to playlist ▸" / "Move to playlist ▸" on both of the local lists above
+            // (see MainWindow.Playlists.cs). Inserted above their Delete/Remove items.
+            AttachPlaylistMenus((Style)FindResource("VideoMenuItem"));
+
             // Video right-click menu (styled in XAML resources).
             _videoContextMenu = (ContextMenu)FindResource("VideoContextMenu");
 

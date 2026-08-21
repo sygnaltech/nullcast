@@ -145,6 +145,46 @@ Separators **inside menus** must be styled via `x:Key="{x:Static MenuItem.Separa
 not the implicit `{x:Type Separator}` style (WPF menus resolve the keyed one). Ours is a dim
 `#12FFFFFF` 1px line inset `Margin="12,5"` so items aren't smashed against a bright default bar.
 
+### Context-menu submenus
+
+`VideoMenuItem` carries **two** templates. The default one is the leaf row (icon + header). A
+`Role="SubmenuHeader"` `Style.Trigger` swaps in a second template that adds a right-aligned
+chevron and, critically, the `PART_Popup` flyout — WPF picks the template by `Role`, so a header
+left on the leaf template renders fine but **never opens**. The flyout reuses the context-menu
+card look (`#E61C1C22`, 12px radius, hairline border, drop shadow) and caps at `MaxHeight="420"`
+with the house `ThinDarkScrollBar`.
+
+Two gotchas when building submenus in code (see `MainWindow.Playlists.cs`):
+
+- A childless `MenuItem` has `Role="SubmenuItem"`. Seed a placeholder child at construction so
+  the header starts out as a `SubmenuHeader`.
+- When repopulating, **append the new items before removing the old ones**. Emptying `Items`
+  clears `HasItems`, which flips `Role` back and re-applies the popup-less leaf template while
+  the menu is on screen.
+
+Submenu children are *not* covered by the `ContextMenu`'s `ItemContainerStyle` — set
+`ItemContainerStyle` on the header `MenuItem` itself so its rows get the same look.
+
+### Toast (transient confirmation)
+
+`ToastPopup` is the house confirmation strip: a top-level `Popup` placed centre-on-`RootGrid`
+(same trick as the search palette, so it paints over the Flyleaf D3D surface and behaves
+identically in windowed and fullscreen) holding a bottom-centre card at `Margin="0,0,0,104"` —
+clear of the controls bar. Card styling matches the up-next panel: `#F00F1118`, 10px radius,
+`#1AFFFFFF` hairline, soft shadow, 13px `#E7E9F1` text.
+
+Raise one with `ShowToast(message, tone)`. It is **not interactive** (`IsHitTestVisible=False`)
+and never asks a question — a status dot carries the tone, staying inside the palette:
+
+| Tone | Dot | Meaning |
+|------|-----|---------|
+| `Success` | `#7D97FF` | something happened |
+| `Neutral` | `#848B9F` | no-op (e.g. "Already in that playlist") |
+| `Error`   | `#ff6666` | it failed (held ~4.2s instead of ~2.6s) |
+
+Calls are re-entrant: a second toast replaces the message in place and restarts the hold rather
+than queueing. Use it for background results the user can't otherwise see — an item sent to a
+playlist from another tab — not for anything that needs acknowledgement.
 ### YT Music tab
 
 The **YT Music** sidebar tab (a fifth `SidebarTab`) mirrors the Podcasts tab's structure —
