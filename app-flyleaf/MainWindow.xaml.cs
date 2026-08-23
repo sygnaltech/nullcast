@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -288,13 +288,84 @@ namespace VideoPlayer
             SidePanel.MouseLeave += SidePanel_MouseLeave;
         }
 
+        /// <summary>
+        /// Directory that holds the external helper binaries (<c>yt-dlp.exe</c> and the
+        /// <c>deno.exe</c> it needs). Both are downloaded on first run and yt-dlp rewrites
+        /// itself via <c>-U</c>, so this folder MUST be writable by the current user.
+        /// <para>
+        /// The app directory is used when it is writable — dev builds out of <c>bin\</c> and
+        /// per-user installs under <c>%LocalAppData%</c>. A per-machine install lands in
+        /// Program Files, which is read-only for a standard user: writing there either fails
+        /// outright or gets silently virtualised, which is how "YouTube stopped working a
+        /// month after install" happens. In that case we fall back to a per-user folder.
+        /// </para>
+        /// </summary>
+        private static string ResolveToolsDirectory()
+        {
+            var appDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            if (IsDirectoryWritable(appDir))
+                return appDir;
+
+            var userTools = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Nullcast", "tools");
+            Directory.CreateDirectory(userTools);
+            App.Log($"[tools] App directory is read-only — using {userTools}");
+
+            // A read-only install may still ship helpers alongside the exe. Seed the writable
+            // copy from them so first launch skips the download and only updates land online.
+            foreach (var name in new[] { "yt-dlp.exe", "deno.exe" })
+            {
+                var bundled = Path.Combine(appDir, name);
+                var target  = Path.Combine(userTools, name);
+                if (File.Exists(bundled) && !File.Exists(target))
+                {
+                    try
+                    {
+                        File.Copy(bundled, target);
+                        App.Log($"[tools] Seeded {name} from the install directory.");
+                    }
+                    catch (Exception ex)
+                    {
+                        App.Log($"[tools] Could not seed {name}: {ex.Message}");
+                    }
+                }
+            }
+
+            return userTools;
+        }
+
+        /// <summary>
+        /// Probe for real write access by creating and deleting a file. Checking ACLs or the
+        /// read-only attribute is not enough on Windows — UAC virtualisation and per-directory
+        /// deny rules only show up when you actually try to write.
+        /// </summary>
+        private static bool IsDirectoryWritable(string dir)
+        {
+            try
+            {
+                var probe = Path.Combine(dir, $".write-probe-{Guid.NewGuid():N}.tmp");
+                using (var fs = new FileStream(probe, FileMode.CreateNew, FileAccess.Write,
+                                               FileShare.None, 1, FileOptions.DeleteOnClose))
+                {
+                    fs.WriteByte(0);
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private async void InitializeYtDlp()
         {
             try
             {
-                var appDir = AppDomain.CurrentDomain.BaseDirectory;
-                _ytdlpPath = Path.Combine(appDir, "yt-dlp.exe");
-                _denoPath  = Path.Combine(appDir, "deno.exe");
+                var toolsDir = ResolveToolsDirectory();
+                _ytdlpPath = Path.Combine(toolsDir, "yt-dlp.exe");
+                _denoPath  = Path.Combine(toolsDir, "deno.exe");
 
                 if (!File.Exists(_ytdlpPath))
                 {

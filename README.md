@@ -19,6 +19,7 @@ This repo contains **two** implementations of the player. They are independent
 | ------ | ------ | ------------ | ----- |
 | [`app-flyleaf/`](app-flyleaf/) | **Active** — current development | [FlyleafLib](https://github.com/SuRGeoNix/Flyleaf) + FFmpeg | This is the app to build, run, and contribute to. |
 | [`app-wpf/`](app-wpf/) | **Legacy** — archived for reference | [LibVLCSharp](https://code.videolan.org/videolan/LibVLCSharp) + libVLC | Kept in-tree as a reference implementation. Not maintained. Do not build new features here. |
+| [`installer/`](installer/) | Release packaging | Inno Setup | Builds the shippable `nullcast-setup-<version>.exe`. |
 
 > **New work goes in `app-flyleaf/`.** `app-wpf/` is retained only so the
 > earlier LibVLC-based approach stays available for comparison. Treat it as
@@ -42,6 +43,27 @@ This repo contains **two** implementations of the player. They are independent
   items, and read live playback state. See **[`VIDEO-PLAYER-API.md`](VIDEO-PLAYER-API.md)**.
 - Indigo Slate visual theme with bundled **Instrument Sans** font.
 
+## Installing
+
+Grab `nullcast-setup-<version>.exe` from the
+[releases page](https://github.com/sygnal/nullcast/releases) and run it. The installer is
+self-contained — no .NET runtime to install first — and asks whether to install for all
+users or just you. Nothing else is required; yt-dlp and its JS runtime are fetched on
+first launch.
+
+The installer is currently unsigned, so SmartScreen will warn on first run.
+
+### Building the installer
+
+Needs [Inno Setup](https://jrsoftware.org/isdl.php) 6 or 7 alongside the .NET SDK:
+
+```powershell
+.\installer\build.ps1
+```
+
+Output lands in `installer\Output\`. See
+[`app-flyleaf/DEPLOY.md`](app-flyleaf/DEPLOY.md) for the full release process.
+
 ## Requirements
 
 - **Windows 10/11**
@@ -64,9 +86,7 @@ Or from your IDE:
 - **Ctrl+F5** — build + run without debugger
 - **Ctrl+Shift+B** — build only
 
-A release build produces `bin/Release/net8.0-windows/VideoPlayer.exe`. Point
-your Start-menu / desktop shortcut at that path. See
-[`app-flyleaf/DEPLOY.md`](app-flyleaf/DEPLOY.md) for deployment details.
+A release build produces `bin/Release/net8.0-windows/VideoPlayer.exe`.
 
 ### FFmpeg note
 

@@ -42,7 +42,18 @@ dotnet build app-flyleaf/VideoPlayer.csproj
 & "D:\Projects\Apps\nullcast\app-flyleaf\bin\Release\net8.0-windows\yt-dlp.exe" -U
 ```
 
-<p></p>
+
+# Install
+
+
+```
+.\installer\build.ps1
+```
+
+
+```
+installer\Output\nullcast-setup-0.2.51.exe
+```
 
 <p></p>
 
