@@ -115,6 +115,42 @@ caption background at 12px.
   frame, which would otherwise put the caption buttons under the screen edge. Fullscreen detaches
   the chrome entirely, or its caption band would keep stealing the top 32px of the video.
 
+### Dialogs get the same caption
+
+A `Window` that ships with the system caption paints light chrome above the Indigo Slate palette
+and looks broken, so **every** window here runs its own. `ServicesSettingsDialog` is the pattern
+for a fixed-size dialog: the same `WindowChrome` (`CaptionHeight="32"`, `UseAeroCaptionButtons="False"`)
+but `ResizeBorderThickness="0"` — `ResizeMode="NoResize"` means there is no resize border to
+reserve — and a 32px `#0F1118` strip holding the title on the left and a single close button on
+the right. No minimise/maximise: a fixed dialog has nothing to do with them.
+
+## Icons — geometry, not glyphs
+
+Icons are `Path` geometry stored as a keyed `Geometry` resource (e.g. `IconGear`), **not** text
+glyphs like `⚙`. A character renders at whatever weight and alignment the font-fallback chain
+happens to land on, which is why the old gear looked thin and off-centre next to real UI.
+
+- Author against the source SVG's `viewBox` and let `Stretch="Uniform"` plus explicit
+  `Width`/`Height` do the sizing — don't rescale the path by hand.
+- Prefix the data with **`F1`** to force the nonzero fill rule. WPF's mini-language defaults to
+  even-odd, SVG defaults to nonzero, and the difference shows up as filled-in ring cut-outs.
+- A `Path` colours from `Fill`, not `Foreground`, so inheritance does not reach it. Bind it:
+  `Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"` — that keeps
+  the template's hover trigger working, since the trigger sets the button's `Foreground`.
+
+## Tabs (settings dialog)
+
+Tabs are **underlined**, not folder tabs — the default `TabItem` chrome is light grey and can't be
+recoloured without a full template anyway. `SettingsTabControl` draws a hairline (`#1AFFFFFF`)
+under the strip; `SettingsTabItem` gives the selected tab bright text (`#EEF1FB`), `SemiBold`, and
+a 2px accent underline (`#7D97FF`), with muted `#848B9F` → `#E7E9F1` on hover for the rest. The
+`TabPanel` carries `Margin="0,0,0,-1"` so the accent underline lands **on** the hairline instead of
+leaving a 1px gap beneath it.
+
+Footer buttons (Cancel/Save) live **outside** the `TabControl` — one Save commits every tab. When
+validation fails for a field on another tab, switch to that tab before showing the message, or the
+button just appears dead.
+
 ## The Plex results panel (reference implementation)
 
 The Plex tab demonstrates the list conventions and the dual **list / tile** view:

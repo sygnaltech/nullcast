@@ -8,6 +8,15 @@ namespace VideoPlayer.Models
         [JsonPropertyName("playlist_collapsed")]
         public bool PlaylistCollapsed { get; set; }
 
+        /// <summary>
+        /// When true, the main window is pinned to every virtual desktop, so it follows the user
+        /// between desktops instead of staying on the one it was opened on. On by default — that
+        /// is what a player is for, and it is why nearly everyone runs this. Turn it off from
+        /// Services ▸ General. Remembered across sessions.
+        /// </summary>
+        [JsonPropertyName("pin_to_all_desktops")]
+        public bool PinToAllDesktops { get; set; } = true;
+
         [JsonPropertyName("completed_muids")]
         public HashSet<string> CompletedMuids { get; set; } = new();
 

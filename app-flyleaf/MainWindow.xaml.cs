@@ -556,11 +556,6 @@ namespace VideoPlayer
                     FlyleafPlayer.Surface.Drop      += VideoArea_Drop;
                 };
 
-                // Pin to all virtual desktops
-                var hwnd = new WindowInteropHelper(this).Handle;
-                var pinned = VirtualDesktopPinner.PinWindow(hwnd);
-                App.Log($"[VideoPlayer] Virtual desktop pin: {(pinned ? "success" : "failed")}, HWND: {hwnd}");
-
                 await InitializePlaylistAsync();
             };
 
@@ -772,6 +767,12 @@ namespace VideoPlayer
             UpdatePlexTabState();
 
             await LoadSettingsAsync();
+
+            // Pin to all virtual desktops. As early as possible once the setting is known —
+            // everything below this point is history/queue/network work the user shouldn't have
+            // to wait through before the window follows them between desktops.
+            ApplyDesktopPin();
+
             CookiesMenuItem.IsChecked = _settings.UseBrowserCookies;
             AutoPlayNextMenuItem.IsChecked = _settings.AutoPlayNextEpisode;
             _shuffle    = _settings.Shuffle;
@@ -1235,9 +1236,14 @@ namespace VideoPlayer
 
         private void OpenServices_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new ServicesSettingsDialog(_services) { Owner = this };
+            var dialog = new ServicesSettingsDialog(_services, _settings) { Owner = this };
             if (dialog.ShowDialog() == true)
             {
+                // General tab writes straight onto _settings, so persist and re-apply anything
+                // that has a live effect on the window.
+                SaveSettings();
+                ApplyDesktopPin();
+
                 // Config changed — rebuild the client and reload the Plex tab from scratch.
                 _plex = new PlexService(_services);
                 _plexSectionsLoaded = false;
@@ -1260,7 +1266,7 @@ namespace VideoPlayer
                 PlexBreadcrumbBar.Visibility = Visibility.Collapsed;
                 if (PlexSpinner != null) PlexSpinner.Visibility = Visibility.Collapsed;
                 if (PlexViewToolbar != null) PlexViewToolbar.Visibility = Visibility.Collapsed;
-                PlexStatusText.Text = "No Plex server configured. Open Services (⚙) to add one.";
+                PlexStatusText.Text = "No Plex server configured. Open Settings (⚙) to add one.";
                 PlexStatusText.Visibility = Visibility.Visible;
                 return;
             }
@@ -2588,6 +2594,70 @@ namespace VideoPlayer
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         // ──────────────────────────────────────────────────────
+        // Pin to all virtual desktops
+        // ──────────────────────────────────────────────────────
+
+        private DispatcherTimer _desktopPinTimer;
+        private int _desktopPinAttempts;
+
+        /// <summary>~5s of retries at 250ms. Well past the window the shell needs in practice.</summary>
+        private const int DesktopPinMaxAttempts = 20;
+
+        /// <summary>
+        /// Pushes <see cref="AppSettings.PinToAllDesktops"/> onto the live window, retrying until
+        /// it takes.
+        /// <para>
+        /// The retry is the point. The shell only hands out an <c>IApplicationView</c> for a window
+        /// it has finished registering, so a single attempt at the wrong moment silently does
+        /// nothing — which is exactly what the custom-caption change caused: the extra
+        /// <c>WindowChrome</c> frame pass moved <c>Loaded</c> ahead of the shell, the one and only
+        /// pin attempt found no view, and (because the old helper reported success regardless)
+        /// nothing noticed or tried again.
+        /// </para>
+        /// <para>
+        /// Also called after every fullscreen transition — those swap <c>WindowStyle</c>, which
+        /// rebuilds the frame and can drop the pin.
+        /// </para>
+        /// </summary>
+        private void ApplyDesktopPin()
+        {
+            if (_desktopPinTimer == null)
+            {
+                _desktopPinTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                _desktopPinTimer.Tick += (s, e) =>
+                {
+                    _desktopPinAttempts++;
+                    if (TryApplyDesktopPin()) { _desktopPinTimer.Stop(); return; }
+
+                    if (_desktopPinAttempts >= DesktopPinMaxAttempts)
+                    {
+                        _desktopPinTimer.Stop();
+                        App.Log($"[VideoPlayer] Virtual desktop pin gave up after " +
+                                $"{_desktopPinAttempts} attempts — the shell never produced a view " +
+                                "for the window.");
+                    }
+                };
+            }
+
+            _desktopPinTimer.Stop();
+            _desktopPinAttempts = 0;
+            if (!TryApplyDesktopPin()) _desktopPinTimer.Start();
+        }
+
+        /// <summary>One attempt. True once the window is in the state the setting asks for.</summary>
+        private bool TryApplyDesktopPin()
+        {
+            bool want = _settings.PinToAllDesktops;
+            var  hwnd = new WindowInteropHelper(this).Handle;
+
+            if (!VirtualDesktopPinner.SetPinned(hwnd, want)) return false;
+
+            App.Log($"[VideoPlayer] Virtual desktop pin {(want ? "applied" : "cleared")} " +
+                    $"(HWND {hwnd}, attempt {_desktopPinAttempts + 1}).");
+            return true;
+        }
+
+        // ──────────────────────────────────────────────────────
         // Timer
         // ──────────────────────────────────────────────────────
 
@@ -3713,6 +3783,9 @@ namespace VideoPlayer
 
                 UpdatePlaylistVisibility();
                 UpdateControlsMode();
+
+                // WindowStyle just changed, which rebuilds the frame — re-assert the pin.
+                ApplyDesktopPin();
             }
             else
             {
@@ -3749,6 +3822,9 @@ namespace VideoPlayer
                 Top    = screen.Bounds.Top   * dpiY;
                 Width  = screen.Bounds.Width * dpiX;
                 Height = screen.Bounds.Height * dpiY;
+
+                // Same reason as the restore path: the borderless switch rebuilds the frame.
+                ApplyDesktopPin();
 
                 // Arm the idle-cursor timer; the pointer hides after 3s of stillness.
                 NudgeCursorIdle();

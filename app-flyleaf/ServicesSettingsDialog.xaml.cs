@@ -1,31 +1,45 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using VideoPlayer.Models;
 using VideoPlayer.Services;
 
 namespace VideoPlayer
 {
     /// <summary>
-    /// "Gear" settings dialog for external services. v1 configures a single Plex
-    /// Media Server (address + token). The token is written through
-    /// <see cref="ServicesStore"/>, which encrypts it at rest via DPAPI.
+    /// "Gear" settings dialog, tabbed into General / Plex Media Server / Tether.
+    /// <para>
+    /// The two service tabs are written through <see cref="ServicesStore"/>, which encrypts the
+    /// tokens at rest via DPAPI. The General tab edits the caller's <see cref="AppSettings"/>
+    /// in place — that object is owned by <c>MainWindow</c>, which persists it and re-applies
+    /// anything with a live effect once the dialog returns true.
+    /// </para>
     /// </summary>
     public partial class ServicesSettingsDialog : Window
     {
         private const string TokenSentinel = "••••••••••••";
 
+        /// <summary>Tab order is General, Plex, Tether — see the TabControl in the XAML.</summary>
+        private const int PlexTabIndex = 1;
+
         private readonly ServicesStore _store;
+        private readonly AppSettings _settings;
         private bool _loading;        // guards programmatic edits during load
         private bool _tokenTouched;       // true once the user edits the Plex token field
         private bool _tetherTokenTouched; // true once the user edits the Tether key field
         private readonly bool _hadExistingToken;
 
-        public ServicesSettingsDialog(ServicesStore store)
+        public ServicesSettingsDialog(ServicesStore store, AppSettings settings)
         {
             InitializeComponent();
-            _store = store;
+            _store    = store;
+            _settings = settings;
 
             _loading = true;
+
+            // General.
+            PinAllDesktopsCheck.IsChecked = _settings.PinToAllDesktops;
+
             ServerBox.Text = _store.PlexBaseUrl;
             ServerBox.TextChanged += (s, e) => UpdateServerPlaceholder();
 
@@ -42,7 +56,6 @@ namespace VideoPlayer
             _loading = false;
 
             UpdateServerPlaceholder();
-            ServerBox.Focus();
         }
 
         private void UpdateServerPlaceholder()
@@ -92,11 +105,18 @@ namespace VideoPlayer
             {
                 if (string.IsNullOrEmpty(token))
                 {
+                    // The status line lives on the Plex tab, so surface it — Save is reachable
+                    // from any tab and a silent refusal would look like a broken button.
+                    SettingsTabs.SelectedIndex = PlexTabIndex;
                     SetStatus("Enter a Plex token.", ok: false);
                     return;
                 }
                 _store.SetPlex(server, token); // encrypts the token before persisting
             }
+
+            // General settings are written straight onto the caller's AppSettings; MainWindow
+            // persists and applies them when ShowDialog() returns true.
+            _settings.PinToAllDesktops = PinAllDesktopsCheck.IsChecked == true;
 
             // Tether settings: provisioned app id + token (optional) plus the dev-token
             // fallback value + toggle. Persisted together.

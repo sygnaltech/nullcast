@@ -126,18 +126,36 @@ namespace VideoPlayer
             return _available;
         }
 
-        public static bool PinWindow(IntPtr hWnd)
+        /// <summary>
+        /// Pins or unpins the window across every virtual desktop, and reports whether the
+        /// requested state actually took.
+        /// <para>
+        /// Returns <c>false</c> — meaning "not applied, try again later" — when the shell has no
+        /// <c>IApplicationView</c> for the HWND yet. That happens for a short window around
+        /// startup and after a style change (entering/leaving borderless fullscreen), because the
+        /// view collection tracks shown top-level windows and is repopulated asynchronously. The
+        /// old code returned <c>true</c> in that case, so a pin that never happened logged as a
+        /// success and nothing retried it.
+        /// </para>
+        /// </summary>
+        public static bool SetPinned(IntPtr hWnd, bool pinned)
         {
-            if (!Initialize()) return false;
+            if (!Initialize() || hWnd == IntPtr.Zero) return false;
 
             try
             {
                 _viewCollection.GetViewForHwnd(hWnd, out var view);
-                if (view != null && !_pinnedApps.IsViewPinned(view))
+                if (view == null) return false;
+
+                if (_pinnedApps.IsViewPinned(view) != pinned)
                 {
-                    _pinnedApps.PinView(view);
+                    if (pinned) _pinnedApps.PinView(view);
+                    else        _pinnedApps.UnpinView(view);
                 }
-                return true;
+
+                // Read back rather than assuming — PinView/UnpinView are void and the shell can
+                // decline (e.g. the view went away between the two calls).
+                return _pinnedApps.IsViewPinned(view) == pinned;
             }
             catch
             {
