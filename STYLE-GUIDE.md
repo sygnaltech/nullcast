@@ -94,6 +94,27 @@ Active/inactive toggling for segmented/icon toggles is done in code-behind using
 `SegActiveBg` / `SegInactiveBg` / `SegActiveFg` / `SegInactiveFg` brushes (see
 `StylePlexSegments` and `ApplyPlexViewMode`).
 
+## Title bar (custom caption)
+
+The window uses a `WindowChrome` with `UseAeroCaptionButtons="False"`, so the caption is ours:
+a 32px `CaptionBar` row at the top of `RootGrid` on `BgApp` (`#0F1118`), sitting above the
+`#151826` menu bar. Icon + "Nullcast" on the left; the version (`TextMuted` `#848B9F`) and the
+window buttons on the right. `TextDim` was tried first and is too dark to read against the
+caption background at 12px.
+
+- `CaptionButton` / `CaptionCloseButton` — 46×32, flat until hovered. The hover fill lives in
+  `Tag` so the close button only has to override that one brush (`#E81123`).
+- Glyphs are `Path` geometry (`CaptionGlyph`), not Segoe MDL2 text — the icon font differs
+  between Windows 10 and 11. `Stroke` binds to the parent button's `Foreground` so hover
+  brightening carries through.
+- Anything clickable in the strip needs `WindowChrome.IsHitTestVisibleInChrome="True"`;
+  everything else is caption, and drags the window.
+- Two behaviours are maintained in code-behind (`MainWindow.xaml.cs`): the maximise glyph swaps
+  to the restore glyph on state change, and `UpdateMaximizedInset()` pulls the content in by the
+  measured overhang when maximized — a `WindowChrome` window is sized to the work area *plus* its
+  frame, which would otherwise put the caption buttons under the screen edge. Fullscreen detaches
+  the chrome entirely, or its caption band would keep stealing the top 32px of the video.
+
 ## The Plex results panel (reference implementation)
 
 The Plex tab demonstrates the list conventions and the dual **list / tile** view:

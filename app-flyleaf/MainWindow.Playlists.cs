@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -13,15 +14,24 @@ using VideoPlayer.Services;
 namespace VideoPlayer
 {
     // ──────────────────────────────────────────────────────────────────────
-    // Send History / Queue rows to an online playlist (workspace).
+    // Send a row to an online playlist (workspace) or to the local Queue.
     //
-    // History and Queue are local-only lists; playlists live on the bookmarks
-    // service. Right-clicking a row offers "Add to playlist ▸" (copy) and
-    // "Move to playlist ▸" (copy, then drop the local row). Both fan out to one
-    // submenu entry per workspace, rebuilt each time the menu opens so a
-    // workspace added elsewhere in the session shows up without a restart.
+    // Two flavours of source, one destination set:
     //
-    // Every outcome — added, already there, failed — reports back through the
+    //   • History / Queue — local-only lists. Right-clicking offers
+    //     "Add to playlist ▸" (copy) and "Move to playlist ▸" (copy, then drop
+    //     the local row).
+    //   • YT Music / Podcasts — browse tabs backed by someone else's catalogue.
+    //     Right-clicking offers "Add to playlist ▸" and "Add to queue"; there's
+    //     no "move", because nothing local is being given up.
+    //
+    // The playlist submenus fan out to one entry per workspace, rebuilt each
+    // time the menu opens so a workspace added elsewhere in the session shows up
+    // without a restart.
+    //
+    // Nothing is ever added twice: the playlist side checks the workspace for
+    // the URL first, and the queue side asks WatchQueueService.Contains. Every
+    // outcome — added, already there, failed — reports back through the
     // bottom-centre toast, because the list that changed is usually not the one
     // the user is looking at and would otherwise change silently.
     // ──────────────────────────────────────────────────────────────────────
@@ -100,15 +110,20 @@ namespace VideoPlayer
         }
 
         /// <summary>
-        /// Fill both submenu headers with one entry per workspace, or disable them with a
-        /// reason when the row can't go to a playlist at all.
+        /// Fill the submenu headers with one entry per workspace, or disable them with a
+        /// reason when the row can't go to a playlist at all. <paramref name="moveItem"/> is
+        /// null for the browse tabs, where there's no local row to move out of.
         /// </summary>
         private void PopulatePlaylistSubmenus(string url, MenuItem addItem, MenuItem moveItem,
                                               Action<Workspace> onAdd, Action<Workspace> onMove)
         {
             string blocked = PlaylistTargetProblem(url);
 
-            foreach (var (header, pick) in new[] { (addItem, onAdd), (moveItem, onMove) })
+            var headers = moveItem == null
+                ? new[] { (addItem, onAdd) }
+                : new[] { (addItem, onAdd), (moveItem, onMove) };
+
+            foreach (var (header, pick) in headers)
             {
                 header.IsEnabled = blocked == null;
 
@@ -155,6 +170,102 @@ namespace VideoPlayer
 
             return null;
         }
+
+        // ── Browse tabs (YT Music, Podcasts) ─────────────────────────────
+
+        private const string IconListPlus =
+            "M3 6 h13 M3 12 h13 M3 18 h9 M17 15 v6 M14 18 h6";
+
+        private ContextMenu _browseContextMenu;
+        private MenuItem    _browseAddToPlaylist;
+        private MenuItem    _browseAddToQueue;
+        private object      _browseContextMenuTarget;
+
+        /// <summary>
+        /// Build the shared "Add to playlist ▸ / Add to queue" menu and hang it off both browse
+        /// lists. One menu instance serves both: it's opened by hand at the cursor, so it never
+        /// needs to know which list it came from beyond the row we captured.
+        /// </summary>
+        private void AttachBrowseMenus(Style contextMenuStyle, Style menuItemStyle)
+        {
+            _browseAddToPlaylist = MakePlaylistHeader("Add to playlist", IconFolderPlus, menuItemStyle);
+
+            _browseAddToQueue = new MenuItem
+            {
+                Header = "Add to queue",
+                Icon   = MakeMenuIcon(IconListPlus),
+            };
+            _browseAddToQueue.Click += BrowseAddToQueue_Click;
+
+            _browseContextMenu = new ContextMenu { Style = contextMenuStyle };
+            _browseContextMenu.Items.Add(_browseAddToPlaylist);
+            _browseContextMenu.Items.Add(_browseAddToQueue);
+            _browseContextMenu.Opened += BrowseContextMenu_Opened;
+
+            YtMusicResultsBox.PreviewMouseRightButtonDown += BrowseResults_PreviewMouseRightButtonDown;
+            PodcastResultsBox.PreviewMouseRightButtonDown += BrowseResults_PreviewMouseRightButtonDown;
+        }
+
+        private void BrowseResults_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var element = e.OriginalSource as DependencyObject;
+            while (element != null && element is not ListBoxItem)
+                element = VisualTreeHelper.GetParent(element);
+
+            _browseContextMenuTarget = (element as ListBoxItem)?.DataContext;
+
+            // Swallow the click either way, as the other lists do — nothing else on these
+            // tabs wants a right-click, and selection here is what starts playback.
+            e.Handled = true;
+
+            if (_browseContextMenuTarget == null) return;
+
+            _browseContextMenu.PlacementTarget = sender as UIElement;
+            _browseContextMenu.Placement       = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+            _browseContextMenu.IsOpen          = true;
+        }
+
+        private void BrowseContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            var (url, title, queueBlocked) = DescribeBrowseRow(_browseContextMenuTarget);
+
+            PopulatePlaylistSubmenus(url, _browseAddToPlaylist, null,
+                ws => _ = SendToPlaylistAsync(url, title, ws, null, null), null);
+
+            // A container row (a YT Music playlist, a podcast show) is a perfectly good link to
+            // bookmark, but it isn't something the player can play — so it can't go on the queue.
+            _browseAddToQueue.Header    = queueBlocked ?? "Add to queue";
+            _browseAddToQueue.IsEnabled = queueBlocked == null;
+        }
+
+        private void BrowseAddToQueue_Click(object sender, RoutedEventArgs e)
+        {
+            var (url, title, queueBlocked) = DescribeBrowseRow(_browseContextMenuTarget);
+            if (queueBlocked != null) return;
+
+            if (_watchQueue.Contains(url))
+            {
+                ShowToast("Already in Queue", ToastTone.Neutral);
+                return;
+            }
+
+            AddToWatchQueue(url, title);
+            ShowToast("Added to Queue");
+        }
+
+        /// <summary>
+        /// What a browse row is worth to the two destinations: the URL to store, the title to
+        /// store with it, and — when it can't be queued — the reason, used verbatim as the
+        /// disabled menu item's text.
+        /// </summary>
+        private static (string Url, string Title, string QueueBlocked) DescribeBrowseRow(object row) => row switch
+        {
+            YtMusicItem yt when yt.IsTrack => (yt.Url, yt.Title, null),
+            YtMusicItem yt                 => (yt.Url, yt.Title, "Open the playlist to queue tracks"),
+            PodcastEpisode ep              => (ep.AudioUrl, ep.Title, null),
+            PodcastShow show               => (show.FeedUrl, show.Title, "Open the show to queue episodes"),
+            _                              => (null, null, "Nothing to add"),
+        };
 
         // ── The actual add / move ────────────────────────────────────────
 

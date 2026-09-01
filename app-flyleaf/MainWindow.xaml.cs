@@ -199,8 +199,12 @@ namespace VideoPlayer
 
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             var versionText = $"v{v.Major}.{v.Minor}.{v.Build}";
-            Title = $"Nullcast {versionText}";
+            // Window.Title is what the taskbar and Alt-Tab show, so it stays the bare name;
+            // the version rides at the right of our own caption strip instead.
+            Title = "Nullcast";
             VersionLabel.Text = versionText;
+            _windowChrome = System.Windows.Shell.WindowChrome.GetWindowChrome(this);
+            UpdateMaxRestoreGlyph();
 
             OpenUrlCommand   = new RelayCommand(_ => OpenUrl_Click(null, null));
             PlayPauseCommand = new RelayCommand(_ => PlayPause_Click(null, null));
@@ -265,6 +269,9 @@ namespace VideoPlayer
             // "Add to playlist ▸" / "Move to playlist ▸" on both of the local lists above
             // (see MainWindow.Playlists.cs). Inserted above their Delete/Remove items.
             AttachPlaylistMenus((Style)FindResource("VideoMenuItem"));
+
+            // "Add to playlist ▸" / "Add to queue" on the YT Music and Podcast browse lists.
+            AttachBrowseMenus(contextMenuStyle, (Style)FindResource("VideoMenuItem"));
 
             // Video right-click menu (styled in XAML resources).
             _videoContextMenu = (ContextMenu)FindResource("VideoContextMenu");
@@ -2491,9 +2498,89 @@ namespace VideoPlayer
 
         private void Window_StateChanged(object sender, EventArgs e)
         {
+            UpdateMaxRestoreGlyph();
+            UpdateMaximizedInset();
             UpdatePlaylistVisibility();
             UpdateControlsMode();
         }
+
+        // ──────────────────────────────────────────────────────
+        // Caption strip (see the WindowChrome block in MainWindow.xaml)
+        // ──────────────────────────────────────────────────────
+
+        // Square = "maximise"; two offset squares = "restore down". 10×10, matching the glyph
+        // box the other two caption buttons draw into.
+        private const string GlyphMaximize = "M0.5,0.5 H9.5 V9.5 H0.5 Z";
+        private const string GlyphRestore  = "M2.5,0.5 H9.5 V7.5 M0.5,2.5 H7.5 V9.5 H0.5 Z";
+
+        private System.Windows.Shell.WindowChrome _windowChrome;
+
+        private void MinimizeWindow_Click(object sender, RoutedEventArgs e) =>
+            WindowState = WindowState.Minimized;
+
+        private void MaxRestoreWindow_Click(object sender, RoutedEventArgs e) =>
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+
+        private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
+
+        private void UpdateMaxRestoreGlyph()
+        {
+            if (MaxRestoreGlyph == null) return;
+            bool max = WindowState == WindowState.Maximized;
+            MaxRestoreGlyph.Data      = Geometry.Parse(max ? GlyphRestore : GlyphMaximize);
+            MaxRestoreButton.ToolTip  = max ? "Restore down" : "Maximise";
+        }
+
+        /// <summary>
+        /// Pull the content in by however far a maximized window hangs off the work area.
+        /// Windows sizes a maximized window to the work area *plus* its frame, expecting the
+        /// frame to fall off-screen — but WindowChrome hands that frame back to the client, so
+        /// without this the caption buttons sit under the screen edge.
+        /// <para>
+        /// The inset is measured (window rect vs. work area) rather than derived from a system
+        /// metric, so it lands on zero if Windows or WPF stops overhanging, instead of leaving a
+        /// permanent gutter around the app.
+        /// </para>
+        /// </summary>
+        private void UpdateMaximizedInset()
+        {
+            if (RootGrid == null) return;
+
+            if (WindowState != WindowState.Maximized || _isFullscreen)
+            {
+                RootGrid.Margin = new Thickness(0);
+                return;
+            }
+
+            // Deferred: on the maximize transition the HWND hasn't taken its new size yet.
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                if (WindowState != WindowState.Maximized || _isFullscreen) return;
+
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var rect)) return;
+
+                var work   = System.Windows.Forms.Screen.FromHandle(hwnd).WorkingArea;
+                var source = PresentationSource.FromVisual(this);
+                double sx  = source?.CompositionTarget?.TransformFromDevice.M11 ?? 1.0;
+                double sy  = source?.CompositionTarget?.TransformFromDevice.M22 ?? 1.0;
+
+                RootGrid.Margin = new Thickness(
+                    Math.Max(0, work.Left   - rect.Left)   * sx,
+                    Math.Max(0, work.Top    - rect.Top)    * sy,
+                    Math.Max(0, rect.Right  - work.Right)  * sx,
+                    Math.Max(0, rect.Bottom - work.Bottom) * sy);
+            }));
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int Left, Top, Right, Bottom; }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         // ──────────────────────────────────────────────────────
         // Timer
@@ -3603,7 +3690,9 @@ namespace VideoPlayer
                 _isFullscreen = false;
                 StopCursorHide();
                 HideSideOverlay();
-                TopBar.Visibility = Visibility.Visible;
+                CaptionBar.Visibility = Visibility.Visible;
+                TopBar.Visibility     = Visibility.Visible;
+                System.Windows.Shell.WindowChrome.SetWindowChrome(this, _windowChrome);
                 WindowStyle = WindowStyle.SingleBorderWindow;
                 ResizeMode  = ResizeMode.CanResize;
                 Topmost     = false;
@@ -3629,10 +3718,14 @@ namespace VideoPlayer
                 _previousLeft        = Left;
                 _previousTop         = Top;
 
-                TopBar.Visibility = Visibility.Collapsed;
+                CaptionBar.Visibility = Visibility.Collapsed;
+                TopBar.Visibility     = Visibility.Collapsed;
                 UpdatePlaylistVisibility();
                 UpdateControlsMode();
 
+                // Without this the chrome's caption band survives the borderless switch and the
+                // top 32px of the video would still drag the window instead of hitting the player.
+                System.Windows.Shell.WindowChrome.SetWindowChrome(this, null);
                 WindowStyle = WindowStyle.None;
                 ResizeMode  = ResizeMode.NoResize;
                 Topmost     = true;
@@ -3851,7 +3944,7 @@ namespace VideoPlayer
                 if (!RootGrid.Children.Contains(ControlsBar))
                 {
                     RootGrid.Children.Add(ControlsBar);
-                    Grid.SetRow(ControlsBar, 2);
+                    Grid.SetRow(ControlsBar, 3);
                 }
             }
         }

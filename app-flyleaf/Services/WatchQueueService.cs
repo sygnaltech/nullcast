@@ -61,8 +61,7 @@ namespace VideoPlayer.Services
             if (string.IsNullOrWhiteSpace(url)) return null;
             url = url.Trim();
 
-            var entry = _entries.FirstOrDefault(
-                e => string.Equals(e.Url, url, StringComparison.OrdinalIgnoreCase));
+            var entry = _entries.FirstOrDefault(e => SameUrl(e.Url, url));
             if (entry == null)
             {
                 entry = new QueueEntry { Url = url };
@@ -80,6 +79,23 @@ namespace VideoPlayer.Services
 
             Save();
             return entry;
+        }
+
+        /// <summary>
+        /// True when this URL is already queued. Callers use it to say "already in Queue"
+        /// instead of silently re-bumping the existing row, which looks like nothing happened.
+        /// </summary>
+        public bool Contains(string url) =>
+            !string.IsNullOrWhiteSpace(url) && _entries.Any(e => SameUrl(e.Url, url.Trim()));
+
+        /// <summary>
+        /// Case-insensitive URL match ignoring a trailing slash — the same rule the playlist
+        /// side uses, so "…/watch?v=x" and "…/watch?v=x/" can't both sit in the queue.
+        /// </summary>
+        private static bool SameUrl(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            return string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>Most-recently-added-first, optionally filtered by a title/URL substring.</summary>

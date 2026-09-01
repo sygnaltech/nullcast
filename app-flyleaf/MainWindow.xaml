@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
         xmlns:ctrl="clr-namespace:VideoPlayer.Controls"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Nullcast"
         Icon="VideoPlayer.ico"
         Height="600" Width="900"
@@ -19,6 +20,19 @@
         AllowDrop="True"
         PreviewDragOver="Window_PreviewDragOver"
         PreviewDrop="Window_PreviewDrop">
+
+    <!-- Custom caption strip. The system one can't hold the version number, and its light
+         chrome clashed with the Indigo Slate palette anyway. UseAeroCaptionButtons is off so
+         the minimise/maximise/close buttons are ours and themed; CaptionHeight matches the
+         CaptionBar row below so dragging and double-click-to-maximise still work.
+         Detached in fullscreen — see ToggleFullscreen(). -->
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="32"
+                            ResizeBorderThickness="6"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
         <!-- ══════════════════════════════════════════════════════
@@ -455,6 +469,51 @@
         </Style>
 
         <!-- Accent pill button (Connect to Playlist) -->
+        <!-- Caption-bar buttons (minimise / maximise / close). Sized like the system ones so
+             the strip reads as a title bar; flat until hovered. Tag carries the hover fill,
+             which is the only thing the close button changes. -->
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width"      Value="46"/>
+            <Setter Property="Height"     Value="32"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#9BA2B5"/>
+            <Setter Property="Tag">
+                <Setter.Value><SolidColorBrush Color="#1AFFFFFF"/></Setter.Value>
+            </Setter>
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CaptionCloseButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+            <Setter Property="Tag">
+                <Setter.Value><SolidColorBrush Color="#E81123"/></Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Glyphs are Paths rather than Segoe MDL2 text so they don't depend on a font that
+             differs between Windows 10 and 11. Stroke follows the button's Foreground. -->
+        <Style x:Key="CaptionGlyph" TargetType="Path">
+            <Setter Property="Stroke"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+            <Setter Property="StrokeThickness" Value="1"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
         <Style x:Key="AccentButton" TargetType="Button">
             <Setter Property="Background"  Value="#7D97FF"/>
             <Setter Property="Foreground"  Value="#0F1118"/>
@@ -951,12 +1010,50 @@
     <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <!-- Caption strip: icon + app name (left), version + window buttons (right).
+             Everything here except the buttons is caption for hit-testing, so the whole
+             strip drags the window and double-click maximises. -->
+        <Border x:Name="CaptionBar" Grid.Row="0" Background="#0F1118" Height="32">
+            <Grid>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"
+                            VerticalAlignment="Center" Margin="10,0,0,0">
+                    <Image Source="VideoPlayer.ico" Width="16" Height="16"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="Nullcast" Margin="9,0,0,0" FontSize="12"
+                               Foreground="#E7E9F1" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <TextBlock x:Name="VersionLabel"
+                               Foreground="#848B9F"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,12,0"/>
+                    <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButton}"
+                            Click="MinimizeWindow_Click" ToolTip="Minimise">
+                        <Path Style="{StaticResource CaptionGlyph}" Data="M0,5 H10"/>
+                    </Button>
+                    <Button x:Name="MaxRestoreButton" Style="{StaticResource CaptionButton}"
+                            Click="MaxRestoreWindow_Click" ToolTip="Maximise">
+                        <Path x:Name="MaxRestoreGlyph" Style="{StaticResource CaptionGlyph}"
+                              Data="M0.5,0.5 H9.5 V9.5 H0.5 Z"/>
+                    </Button>
+                    <Button x:Name="CloseButton" Style="{StaticResource CaptionCloseButton}"
+                            Click="CloseWindow_Click" ToolTip="Close">
+                        <Path Style="{StaticResource CaptionGlyph}" Data="M0,0 L10,10 M10,0 L0,10"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <!-- Top bar: Menu (left) + Login status (right) -->
-        <Border x:Name="TopBar" Grid.Row="0" Background="#151826"
+        <Border x:Name="TopBar" Grid.Row="1" Background="#151826"
                 BorderBrush="#0FFFFFFF" BorderThickness="0,0,0,1">
             <DockPanel LastChildFill="False" Height="38">
                 <Menu x:Name="MenuBar" DockPanel.Dock="Left" Background="Transparent"
@@ -1024,17 +1121,12 @@
                             Click="SignOut_Click"
                             Style="{StaticResource TextButton}"
                             Visibility="Collapsed"/>
-                    <TextBlock x:Name="VersionLabel"
-                               Foreground="#565C6D"
-                               VerticalAlignment="Center"
-                               FontSize="12"
-                               Margin="16,0,0,0"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
-        <!-- Row 1: Video area (left) + Playlist column (right) -->
-        <Grid Grid.Row="1">
+        <!-- Video area (left) + Playlist column (right) -->
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="VideoColumn" Width="*"/>
                 <ColumnDefinition x:Name="PanelColumn" Width="Auto"/>
@@ -2132,7 +2224,7 @@
         </Grid>
 
         <!-- Controls -->
-        <Grid x:Name="ControlsBar" Grid.Row="2" Background="#141726" Height="74">
+        <Grid x:Name="ControlsBar" Grid.Row="3" Background="#141726" Height="74">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
