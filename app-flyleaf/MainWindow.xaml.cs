@@ -2500,6 +2500,11 @@ namespace VideoPlayer
         {
             UpdateMaxRestoreGlyph();
             UpdateMaximizedInset();
+
+            // Restoring down re-docks the sidebar, so a floating copy would be a second one.
+            if (_sideOverlayActive && !IsImmersive)
+                HideSideOverlay();
+
             UpdatePlaylistVisibility();
             UpdateControlsMode();
         }
@@ -3800,19 +3805,32 @@ namespace VideoPlayer
         }
 
         // ──────────────────────────────────────────────────────
-        // Right-edge sidebar overlay (cinema fullscreen only)
+        // Right-edge sidebar overlay (immersive modes)
         // ──────────────────────────────────────────────────────
 
+        /// <summary>True in the two modes where UpdatePlaylistVisibility() hides the docked sidebar.</summary>
+        private bool IsImmersive => _isFullscreen || WindowState == WindowState.Maximized;
+
         /// <summary>
-        /// In cinema fullscreen, a pointer at the extreme right edge of the screen
-        /// pops the sidebar out over the video (no resize). No-op otherwise.
+        /// While the docked sidebar is hidden, a pointer at the extreme right edge of the screen
+        /// pops it out over the video (no resize). No-op otherwise.
+        /// <para>
+        /// Both immersive modes need this, not just fullscreen: maximizing also hides the sidebar
+        /// and the tab strip, so without a pointer trigger there is no way back to the playlist
+        /// short of restoring the window down.
+        /// </para>
         /// </summary>
         private void MaybeTriggerSideOverlay(MouseEventArgs e)
         {
-            if (!_isFullscreen || _sideOverlayActive) return;
+            if (!IsImmersive || _sideOverlayActive) return;
+
+            // A maximized WindowChrome window is sized past the work area, so its own right edge
+            // is off-screen and the pointer can never reach it. RootGrid's inset is exactly that
+            // overhang (see UpdateMaximizedInset), and is zero in every other state.
+            double rightEdge = ActualWidth - RootGrid.Margin.Right;
 
             var pos = e.GetPosition(this);
-            if (pos.X >= ActualWidth - 3 && pos.Y >= 0 && pos.Y <= ActualHeight)
+            if (pos.X >= rightEdge - 3 && pos.Y >= 0 && pos.Y <= ActualHeight)
                 ShowSideOverlay();
         }
 
