@@ -133,10 +133,22 @@ happens to land on, which is why the old gear looked thin and off-centre next to
 - Author against the source SVG's `viewBox` and let `Stretch="Uniform"` plus explicit
   `Width`/`Height` do the sizing — don't rescale the path by hand.
 - **`Stretch` normalizes to the path's content bounds, not its `viewBox`**, so two icons given
-  the same `Width` are only the same visual size if they fill their boxes equally. `IconGear`
-  fills 82% of its 256 box; `IconExternalLink` fills 16 of 24 (67%), so it is drawn at 15 rather
-  than 17 to sit level with the gear. Check a new glyph's bounds
-  (`[System.Windows.Media.Geometry]::Parse(data).Bounds`) before assuming it can share a number.
+  the same `Width` are only the same visual size if they fill their boxes equally. Check a new
+  glyph's bounds (`[System.Windows.Media.Geometry]::Parse(data).Bounds`) before assuming it can
+  share a number, and size it so the *notional* 24-unit box lands around 21px. The top bar's four:
+
+  | Icon | Content bounds | `Width` |
+  |------|----------------|---------|
+  | `IconHistory` | 21 of 24 | 18 |
+  | `IconQueue` | 18 of 24 | 16 |
+  | `IconGear` | 209 of 256 | 17 |
+  | `IconExternalLink` | 16 of 24 | 15 |
+
+- **Expand packed SVG path data rather than pasting it verbatim.** SVG permits compacted arc flag
+  groups (`a2 2 0 0 1-2 2`) and chained relative moves (`m-1 5`); WPF's parser is not reliable on
+  the first, and the second hides where a subpath actually starts. Write flags with separators and
+  resolve a trailing relative `m` to an absolute `M` — then confirm with
+  `Geometry.Parse(data).Bounds`, which catches a mis-traced start point immediately.
 - Prefix the data with **`F1`** to force the nonzero fill rule. WPF's mini-language defaults to
   even-odd, SVG defaults to nonzero, and the difference shows up as filled-in ring cut-outs.
 - A `Path` colours from `Fill`, not `Foreground`, so inheritance does not reach it. Bind it:
@@ -233,12 +245,30 @@ the content in the `*` column beside it. There is **no divider between the strip
 — the panel's own left border (video ↔ panel) is the only separator. The strip is wrapped in a
 `ScrollViewer` with the scrollbar **hidden** (`VerticalScrollBarVisibility="Hidden"`), so a very
 short window can still wheel-scroll to a tab but no stray scrollbar ever shows between tabs and
-content. Order: Nullcast.TV · Playlist · History · Plex · Podcasts · YT Music — Nullcast's own
-catalog leads; everything after it is somebody else's service.
+content. Order: Nullcast.TV · Playlist · Plex · Podcasts · YT Music · History — Nullcast's own
+catalog leads, everything between is somebody else's service, and History sits **last** because it
+is an aggregator of whatever did play rather than a source.
 
 Every tab except History is **hidden outright when its provider is switched off** in
-Settings ▸ Providers (`ApplyProviderTabs`). History is an aggregator rather than a source, so it is
-always present — which is also what guarantees the strip can never be empty.
+Settings ▸ Providers (`ApplyProviderTabs`). History is always present — which is also what
+guarantees the strip can never be empty.
+
+## The top-bar glyph row
+
+The right end of the top bar holds a row of flat glyph buttons, right-aligned and ordered
+left-to-right: **History · Queue · Open on Nullcast.TV · Settings**. All four share the
+`TopBarIconButton` style — transparent until hovered, when the button's `Foreground` brightens to
+`#E7E9F1` and each glyph's `Fill` binding carries that through.
+
+- The History and Queue buttons are **shortcuts, not a second home** for those views: they select
+  the History tab and its sub-tab, then call `RevealSidePanel()` so the panel is actually on
+  screen. Skipping that last step makes them look broken in the two states where the sidebar is
+  hidden — collapsed, and maximized (where the panel is normally summoned by the right screen
+  edge).
+- The Nullcast.TV link is the only one that hides itself: it appears only while a Nullcast.TV film
+  is playing, because there is nowhere for it to go otherwise.
+- Each button sets its own `Width`/`Height` on its `Path`. **They are deliberately not equal** —
+  see the `Stretch` note under Icons.
 
 ### Menu items — checkmarks & separators
 

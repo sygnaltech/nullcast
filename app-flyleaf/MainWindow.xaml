@@ -55,6 +55,15 @@
              there but is not something WPF's parser can be relied on to split. -->
         <Geometry x:Key="IconExternalLink">F0 M6,8 h5 v2 H6 v8 h8 v-5 h2 v5 a2,2 0 0 1 -2,2 H6 a2,2 0 0 1 -2,-2 v-8 a2,2 0 0 1 2,-2 M16.614,6 H12 V4 h8 v8 h-2 V7.442 l-5.336,5.336 l-1.414,-1.414 Z</Geometry>
 
+        <!-- Clock with a counter-clockwise arrow — the conventional "history" mark.
+             The source SVG's packed relative moves are expanded here: `m-1 5` after the outer
+             circle resolves to M12,8, and writing it absolutely is what makes the subpath
+             readable (and checkable against Geometry.Parse().Bounds). -->
+        <Geometry x:Key="IconHistory">F1 M13,3 a9,9 0 0 0 -9,9 H1 l3.89,3.89 l0.07,0.14 L9,12 H6 c0,-3.87 3.13,-7 7,-7 s7,3.13 7,7 s-3.13,7 -7,7 c-1.93,0 -3.68,-0.79 -4.94,-2.06 l-1.42,1.42 A8.95,8.95 0 0 0 13,21 a9,9 0 0 0 0,-18 M12,8 v5 l4.25,2.52 l0.77,-1.28 l-3.52,-2.09 V8 Z</Geometry>
+
+        <!-- A stacked queue: one pill on top of three rules. Same expansion treatment. -->
+        <Geometry x:Key="IconQueue">F1 M5.625,3.75 a2.625,2.625 0 1 0 0,5.25 h12.75 a2.625,2.625 0 0 0 0,-5.25 Z M3.75,11.25 a0.75,0.75 0 0 0 0,1.5 h16.5 a0.75,0.75 0 0 0 0,-1.5 Z M3,15.75 a0.75,0.75 0 0 1 0.75,-0.75 h16.5 a0.75,0.75 0 0 1 0,1.5 H3.75 a0.75,0.75 0 0 1 -0.75,-0.75 M3.75,18.75 a0.75,0.75 0 0 0 0,1.5 h16.5 a0.75,0.75 0 0 0 0,-1.5 Z</Geometry>
+
         <SolidColorBrush x:Key="BgAppBrush"         Color="#0F1118"/>
         <SolidColorBrush x:Key="BgMenuBrush"        Color="#151826"/>
         <SolidColorBrush x:Key="BgControlsBrush"    Color="#141726"/>
@@ -438,6 +447,32 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Top-bar glyph button: flat and muted until hovered, when the whole button brightens.
+             A Path colours from Fill, which does not inherit, so each button binds its glyph's
+             Fill back to the button's own Foreground — that is what keeps this one hover trigger
+             working for all of them. -->
+        <Style x:Key="TopBarIconButton" TargetType="Button">
+            <Setter Property="Foreground"         Value="#848B9F"/>
+            <Setter Property="Cursor"             Value="Hand"/>
+            <Setter Property="VerticalAlignment"  Value="Center"/>
+            <Setter Property="Margin"             Value="0,0,16,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" Padding="2">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#E7E9F1"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -1279,7 +1314,35 @@
                      button; it now sits on each provider's own Settings page, because there
                      are several accounts to hold and one button could only ever speak for the
                      first of them. -->
+                <!-- Four glyph buttons sharing TopBarIconButton. Each sizes its own Path,
+                     because Stretch normalizes to a path's CONTENT bounds rather than its
+                     viewBox — see the note on each Width. -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <!-- Jump straight to History, and to Queue beside it. Both are shortcuts to
+                         the sidebar's History tab and its two sub-tabs — the tab itself still
+                         sits in the strip, at the bottom, since History is an aggregator rather
+                         than a source and belongs after the providers. -->
+                    <Button x:Name="HistoryQuickButton"
+                            Click="HistoryQuick_Click"
+                            ToolTip="History"
+                            Style="{StaticResource TopBarIconButton}">
+                        <!-- 18: this glyph spans 21 of its 24 units, so it needs a larger
+                             number than the gear to sit at the same visual weight. -->
+                        <Path Data="{StaticResource IconHistory}"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Stretch="Uniform" Width="18" Height="18"/>
+                    </Button>
+
+                    <Button x:Name="QueueQuickButton"
+                            Click="QueueQuick_Click"
+                            ToolTip="Queue"
+                            Style="{StaticResource TopBarIconButton}">
+                        <!-- 16: spans 18 of 24. -->
+                        <Path Data="{StaticResource IconQueue}"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Stretch="Uniform" Width="16" Height="16"/>
+                    </Button>
+
                     <!-- Open the film's Nullcast.TV watch page. Visible only while a Nullcast.TV
                          film is the thing playing — for everything else there is no page to go
                          to, and a permanently-present button that does nothing four times out of
@@ -1287,59 +1350,23 @@
                     <Button x:Name="WatchOnNullcastButton"
                             Click="WatchOnNullcast_Click"
                             ToolTip="Open this film on Nullcast.TV"
-                            Margin="0,0,16,0"
-                            Foreground="#848B9F"
-                            Cursor="Hand"
-                            VerticalAlignment="Center"
+                            Style="{StaticResource TopBarIconButton}"
                             Visibility="Collapsed">
-                        <!-- 15, not the gear's 17: Stretch normalizes to the path's CONTENT
-                             bounds, not its viewBox. This glyph fills 16 of its 24 units where
-                             the gear fills 82% of its own box, so matching numbers would render
-                             it about a quarter larger than the gear beside it. -->
+                        <!-- 15: spans only 16 of 24, the most padded of the four. -->
                         <Path Data="{StaticResource IconExternalLink}"
                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                               Stretch="Uniform" Width="15" Height="15"/>
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="Transparent" Padding="2">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                      TextElement.Foreground="{TemplateBinding Foreground}"/>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Foreground" Value="#E7E9F1"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Button.Template>
                     </Button>
 
                     <!-- Services / settings gear -->
                     <Button x:Name="ServicesButton"
                             Click="OpenServices_Click"
                             ToolTip="Settings…"
-                            Margin="0,0,16,0"
-                            Foreground="#848B9F"
-                            Cursor="Hand"
-                            VerticalAlignment="Center">
-                        <!-- Fill (not Foreground) carries the colour for a Path, and it has to
-                             follow the button so the template's hover trigger still brightens it. -->
+                            Style="{StaticResource TopBarIconButton}">
+                        <!-- 17: spans 82% of its 256 box. -->
                         <Path Data="{StaticResource IconGear}"
                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                               Stretch="Uniform" Width="17" Height="17"/>
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="Transparent" Padding="2">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                      TextElement.Foreground="{TemplateBinding Foreground}"/>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Foreground" Value="#E7E9F1"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Button.Template>
                     </Button>
                 </StackPanel>
             </DockPanel>
@@ -1501,15 +1528,6 @@
                                         <TextBlock Text="Playlist" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="HistoryTabButton"
-                                        Click="ShowHistoryTab_Click"
-                                        Style="{StaticResource VerticalTabButton}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ctrl:SourceBadge SourceKey="History" Size="18"
-                                                          VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <TextBlock Text="History" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
                                 <Button x:Name="PlexTabButton"
                                         Click="ShowPlexTab_Click"
                                         Style="{StaticResource VerticalTabButton}">
@@ -1535,6 +1553,19 @@
                                         <ctrl:SourceBadge SourceKey="YtMusic" Size="18"
                                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
                                         <TextBlock Text="YT Music" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <!-- History last: it is an aggregator of whatever did play, not a
+                                     source, so it sits after the providers rather than among them.
+                                     It is also the only tab never hidden by a provider switch,
+                                     which is what stops the strip ever being empty. -->
+                                <Button x:Name="HistoryTabButton"
+                                        Click="ShowHistoryTab_Click"
+                                        Style="{StaticResource VerticalTabButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ctrl:SourceBadge SourceKey="History" Size="18"
+                                                          VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="History" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>

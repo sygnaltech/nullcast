@@ -1032,6 +1032,41 @@ namespace VideoPlayer
         private void ShowHistorySubTab_Click(object sender, RoutedEventArgs e) => SelectHistorySubTab(HistorySubTab.History);
         private void ShowQueueSubTab_Click(object sender, RoutedEventArgs e)   => SelectHistorySubTab(HistorySubTab.Queue);
 
+        // ── Top-bar shortcuts ─────────────────────────────────
+
+        private void HistoryQuick_Click(object sender, RoutedEventArgs e) => JumpToHistory(HistorySubTab.History);
+        private void QueueQuick_Click(object sender, RoutedEventArgs e)   => JumpToHistory(HistorySubTab.Queue);
+
+        /// <summary>
+        /// Select the History tab and one of its sub-tabs, then make sure the sidebar is
+        /// actually on screen. Without that last step the shortcut looks broken in the two
+        /// states where the panel isn't showing — collapsed, and maximized (where the docked
+        /// panel is hidden and the overlay is normally summoned by the right screen edge).
+        /// </summary>
+        private void JumpToHistory(HistorySubTab sub)
+        {
+            SelectTab(SidebarTab.History);
+            SelectHistorySubTab(sub);
+            RevealSidePanel();
+        }
+
+        /// <summary>Bring the sidebar into view however this window state gets it there.</summary>
+        private void RevealSidePanel()
+        {
+            if (IsImmersive)
+            {
+                if (!_sideOverlayActive) ShowSideOverlay();
+                return;
+            }
+
+            if (_settings.PlaylistCollapsed)
+            {
+                _settings.PlaylistCollapsed = false;
+                SaveSettings();
+            }
+            UpdatePlaylistVisibility();
+        }
+
         private void SelectHistorySubTab(HistorySubTab sub)
         {
             _historySubTab = sub;
