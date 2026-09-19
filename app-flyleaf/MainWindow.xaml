@@ -2264,16 +2264,29 @@
 
                         <!-- Browse / Series / Search. Fixed set — unlike Plex there are no
                              per-server libraries to enumerate. Styled active/inactive in code. -->
-                        <WrapPanel x:Name="TvSegmentBar"
-                                   Grid.Row="0"
-                                   Margin="20,14,16,2">
-                            <Button x:Name="TvBrowseSegment" Content="Browse" Tag="Browse"
-                                    Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
-                            <Button x:Name="TvSeriesSegment" Content="Series" Tag="Series"
-                                    Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
-                            <Button x:Name="TvSearchSegment" Content="Search" Tag="Search"
-                                    Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
-                        </WrapPanel>
+                        <DockPanel Grid.Row="0" Margin="20,14,16,2" LastChildFill="False">
+                            <!-- Nothing about the catalog is pushed and nothing here polls, so a
+                                 feed already on screen goes stale silently the moment the server
+                                 moves. One button, in reach from every segment, is the answer. -->
+                            <Button x:Name="TvRefreshButton"
+                                    DockPanel.Dock="Right"
+                                    Content="↻"
+                                    Width="34" Height="28"
+                                    Margin="0,0,0,6"
+                                    FontSize="15"
+                                    Style="{StaticResource IconButton}"
+                                    ToolTip="Re-ask the catalog for this list"
+                                    Visibility="Collapsed"
+                                    Click="TvRefresh_Click"/>
+                            <WrapPanel x:Name="TvSegmentBar" DockPanel.Dock="Left">
+                                <Button x:Name="TvBrowseSegment" Content="Browse" Tag="Browse"
+                                        Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
+                                <Button x:Name="TvSeriesSegment" Content="Series" Tag="Series"
+                                        Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
+                                <Button x:Name="TvSearchSegment" Content="Search" Tag="Search"
+                                        Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
+                            </WrapPanel>
+                        </DockPanel>
 
                         <!-- Channel selector (Views + Browse by) with a type-to-filter popup -->
                         <Grid x:Name="TvChannelHost" Grid.Row="1" Margin="20,4,20,4"
@@ -2357,7 +2370,20 @@
                                             </ListBox.GroupStyle>
                                             <ListBox.ItemTemplate>
                                                 <DataTemplate>
-                                                    <TextBlock Text="{Binding Label}" FontSize="13" Margin="8,6"/>
+                                                    <DockPanel Margin="8,6" LastChildFill="False">
+                                                        <!-- The catalog's own count for the channel. On the
+                                                             editor-only "Unreviewed" it is the work left, and
+                                                             the one number here meant to go down. -->
+                                                        <TextBlock DockPanel.Dock="Right"
+                                                                   Text="{Binding CountLabel}"
+                                                                   FontSize="11"
+                                                                   Foreground="#565C6D"
+                                                                   Margin="10,0,2,0"
+                                                                   VerticalAlignment="Center"/>
+                                                        <TextBlock DockPanel.Dock="Left"
+                                                                   Text="{Binding Label}"
+                                                                   FontSize="13"/>
+                                                    </DockPanel>
                                                 </DataTemplate>
                                             </ListBox.ItemTemplate>
                                         </ListBox>

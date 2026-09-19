@@ -175,6 +175,7 @@ namespace VideoPlayer
 
             TvConnectButton.Visibility = signedIn ? Visibility.Collapsed : Visibility.Visible;
             TvSegmentBar.Visibility    = signedIn ? Visibility.Visible   : Visibility.Collapsed;
+            TvRefreshButton.Visibility = signedIn ? Visibility.Visible   : Visibility.Collapsed;
             TvFilterHost.Visibility    = signedIn ? Visibility.Visible   : Visibility.Collapsed;
             if (TvSpinner != null) TvSpinner.Visibility = Visibility.Collapsed;
 
@@ -501,6 +502,106 @@ namespace VideoPlayer
                 _tvLoadingMore = false;
                 TvLoadMoreButton.IsEnabled = true;
             }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Refresh
+        //
+        // The catalog is polled by nobody and pushes to nobody: the channel list is read once
+        // per session and a feed's pages are cached in the stack, so anything that changes
+        // server-side after a level is on screen stays invisible until it is asked for again.
+        // That is fine for browsing and wrong for working through a list — an item dealt with
+        // on the site would otherwise sit there looking untouched.
+        // ──────────────────────────────────────────────────────
+
+        private async void TvRefresh_Click(object sender, RoutedEventArgs e) => await RefreshTvAsync();
+
+        /// <summary>
+        /// Re-ask the catalog for the level on show, keeping the breadcrumb below it. Comes back
+        /// at page one: the cursor is opaque and a refetched feed is a different list, so the
+        /// pages loaded before it are not something that can be honestly re-assembled.
+        /// </summary>
+        private async Task RefreshTvAsync()
+        {
+            if (_tvAuth?.IsSignedIn != true) return;
+
+            TvRefreshButton.IsEnabled = false;
+            try
+            {
+                // The picker carries per-channel counts and could have gained a channel since
+                // sign-in, so a Browse refresh re-reads it too.
+                if (_tvSection == TvSection.Browse && !await ReloadTvChannelsAsync())
+                    return;   // the channel being browsed is gone; ReloadTvChannelsAsync rebrowsed
+
+                var feed = TvTop;
+                if (feed == null)
+                {
+                    // Nothing loaded to refresh — a search with an empty box, or a first load
+                    // that failed. Start the segment again rather than doing nothing visible.
+                    await SelectTvSegment(_tvSection);
+                    return;
+                }
+
+                int token = ++_tvLoadToken;
+                ShowTvLoading("Refreshing…");
+
+                var (items, cursor) = await FetchTvPageAsync(feed, null);
+                if (token != _tvLoadToken) return;   // a newer load superseded this one
+
+                feed.Items  = items;
+                feed.Cursor = cursor;
+                ApplyTvNarrow();
+            }
+            catch (Exception ex)
+            {
+                ShowTvError(ex.Message);
+            }
+            finally
+            {
+                TvRefreshButton.IsEnabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Re-read the channel list and keep the picker on the same slug. Returns false when
+        /// that channel is no longer published — in which case the browse has been restarted on
+        /// the first channel and the caller has nothing left to refresh.
+        /// </summary>
+        private async Task<bool> ReloadTvChannelsAsync()
+        {
+            List<TvApiChannel> channels;
+            try
+            {
+                channels = await _tv.GetChannelsAsync();
+            }
+            catch (Exception ex)
+            {
+                // A stale picker is not worth failing the refresh over — the feed itself is
+                // what was asked for, and it is fetched next.
+                App.Log($"[Nullcast.TV] Channel refresh failed: {ex.Message}");
+                return true;
+            }
+
+            if (channels.Count == 0) return true;
+
+            var slug = _tvCategory?.Slug;
+            _tvCategories.Clear();
+            foreach (var ch in channels)
+                _tvCategories.Add(new TvCategory(ch, ch.IsFacet ? "Browse by" : "Views"));
+            _tvChannelsLoaded = true;
+
+            var same = _tvCategories.FirstOrDefault(c =>
+                string.Equals(c.Slug, slug, StringComparison.OrdinalIgnoreCase));
+
+            if (same != null)
+            {
+                _tvCategory = same;
+                TvChannelButton.Content = same.Label;
+                return true;
+            }
+
+            await ApplyTvCategory(_tvCategories.FirstOrDefault(c => !c.IsFacet) ?? _tvCategories[0]);
+            return false;
         }
 
         /// <summary>

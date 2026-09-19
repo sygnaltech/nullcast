@@ -92,7 +92,7 @@ personal access token is cleared. A personal token is revoked from the site.
 
 | `kind` | What it is | `GET /public/channels/{slug}` returns |
 |---|---|---|
-| `query` | an ordering over the whole catalog (`trending`, `top`, `new`) | a page of `videos` |
+| `query` | an ordering over the whole catalog (`trending`, `top`, `new`, and `unreviewed` for editors) | a page of `videos` |
 | `curated` | a hand-built shelf (`picks`) | a page of `videos` |
 | `facet` | the catalog **grouped** by a column (`models`, `creators`, `genres`) | a page of `facets` — a **directory** — with `videos` empty |
 
@@ -110,6 +110,58 @@ three.
 > A language hit *can* still come back from search, tagged `facet: "language"` — `SlugForFacet`
 > resolves the fronting channel from the loaded channel list and returns `""` for language, and
 > `TvDrillInto` says so out loud rather than issuing a request that 404s.
+
+### Restricted channels
+
+A channel row can carry a **platform-role floor** (`minRole`), and the catalog serves it — in the
+line-up *and* as a feed — only to a credential that clears it. There is one today:
+
+| Channel | Floor | What it is |
+|---|---|---|
+| `unreviewed` — "Unreviewed" | platform **editor** | published films with no `human_reviewed_at` stamp, **oldest on air first**, because a back catalogue is worked from the far end forwards. Its `count` is the one number meant to go *down*. |
+
+**This client needs no code for it.** `PopulateTvChannelsAsync` files whatever `GET /public/channels`
+returns, and `unreviewed` is `kind: "query"` — so it arrives in the **Views** group and pages,
+filters, drills and plays like `trending` does. An editor sees it; everybody else gets a line-up
+without it and is never told it exists.
+
+Each picker row prints the channel's `count` beside its name (`TvCategory.CountLabel`, blank at
+zero). On the ordinary channels that is a size; on **Unreviewed** it is the work left.
+
+> [!IMPORTANT]
+> **A channel you may not see answers `404`, not `403`** — the same answer as a slug that was never
+> created, deliberately, because for this one the existence *is* the information. `DescribeFailure`
+> already renders that as "No such channel or series on Nullcast.TV", which is the right thing to
+> say. Never infer from the status code that a channel exists.
+
+So "I can't see Unreviewed" is one of exactly two things: the saved credential is not a platform
+editor, or **the channel list has not been re-read since it became one** — see below.
+
+### Staleness and the refresh button
+
+**Nothing here refreshes itself.** The catalog neither pushes nor is polled: `GET /public/channels`
+is read **once per session** (`_tvChannelsLoaded`), and each level's fetched pages live on in its
+`TvFeed` so a breadcrumb can come back to it without a round trip. A level that is on screen is a
+snapshot of the moment it was asked for, and it stays that way.
+
+For browsing that is the right trade. For *working through* a list it is not — an item dealt with
+on the site sits there still looking untouched — so a `↻` button sits at the right of the segment
+bar and `RefreshTvAsync` re-asks for the level on show:
+
+- It comes back at **page one**. The cursor is opaque and a refetched feed is a different list, so
+  the pages loaded before it cannot honestly be re-assembled.
+- The breadcrumb **below** the level is kept; only the top of the stack is refetched.
+- On **Browse** the channel list is re-read first, so counts move and a newly seeded channel
+  appears. The picker is put back on the **same slug**; if that channel is no longer published,
+  `ReloadTvChannelsAsync` returns `false` and the browse restarts on the first channel.
+- A channel-list failure is **logged and swallowed** — a stale picker is not worth failing the
+  refresh the caller actually asked for.
+
+> [!NOTE]
+> Re-picking the **same** channel from the dropdown is not a refresh: `SelectionChanged` does not
+> fire for the row that is already selected. Clicking the **Browse** segment again *does* refetch,
+> but only by accident of `PopulateTvChannelsAsync` re-applying the current category — which is
+> exactly the kind of thing nobody discovers. Hence the button.
 
 ### Vocabularies
 

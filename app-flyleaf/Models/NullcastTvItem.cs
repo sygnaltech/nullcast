@@ -324,6 +324,16 @@ namespace VideoPlayer.Models
         public string Slug    => Channel?.Slug ?? "";
         public bool   IsFacet => Channel?.IsFacet == true;
         public string Facet   => Channel?.Facet ?? "";
+
+        /// <summary>
+        /// Films carrying this channel, for the badge beside its name in the picker. Worth
+        /// printing on every row rather than special-casing one: on the editor-only
+        /// <c>unreviewed</c> channel it is the count of films nobody has checked, and the only
+        /// number in the tab that is meant to go <b>down</b>. "" when the catalog reports none,
+        /// so an empty shelf reads as a name rather than a zero.
+        /// </summary>
+        public string CountLabel =>
+            Channel is { Count: > 0 } ? Channel.Count.ToString("N0", CultureInfo.CurrentCulture) : "";
     }
 
     // ──────────────────────────────────────────────────────────
