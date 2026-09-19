@@ -132,6 +132,11 @@ happens to land on, which is why the old gear looked thin and off-centre next to
 
 - Author against the source SVG's `viewBox` and let `Stretch="Uniform"` plus explicit
   `Width`/`Height` do the sizing — don't rescale the path by hand.
+- **`Stretch` normalizes to the path's content bounds, not its `viewBox`**, so two icons given
+  the same `Width` are only the same visual size if they fill their boxes equally. `IconGear`
+  fills 82% of its 256 box; `IconExternalLink` fills 16 of 24 (67%), so it is drawn at 15 rather
+  than 17 to sit level with the gear. Check a new glyph's bounds
+  (`[System.Windows.Media.Geometry]::Parse(data).Bounds`) before assuming it can share a number.
 - Prefix the data with **`F1`** to force the nonzero fill rule. WPF's mini-language defaults to
   even-odd, SVG defaults to nonzero, and the difference shows up as filled-in ring cut-outs.
 - A `Path` colours from `Fill`, not `Foreground`, so inheritance does not reach it. Bind it:
@@ -200,9 +205,14 @@ results) and reuses `PlexSegment`, `CategoryToggle`, `IconButton`, `ListItemCont
 are 16:9 and a 16:9 still cropped into a 2:3 poster frame is letterboxed down to a strip.
 
 - `TvListItemTemplate` — 64×36 leading still; otherwise identical in rhythm to the Plex row.
-- `TvTileItemTemplate` — 140px tile with a **140 × 79** still (16:9 to the pixel), so two still fit
-  the sidebar's content column with the 9px scrollbar present. Runtime badge bottom-right, episode
-  badge bottom-left, drill chevron top-right.
+- `TvTileItemTemplate` — 134px tile with a **134 × 75** still (16:9 to the pixel). Runtime badge
+  bottom-right, episode badge bottom-left, drill chevron top-right.
+
+  **Tile width is a fixed budget, not a free choice.** The sidebar's content column offers about
+  **292 DIP** once the vertical tab strip, the list's 8px padding and the 9px scrollbar are taken
+  out, so a tile plus its margin must be ≤ 146 for two columns — which is why both the Plex poster
+  tile and this one are 134 wide. A tile even a few DIP wider does not get narrower columns, it
+  silently drops to **one**, which reads as a layout bug rather than a sizing one.
 - `TvEpisodeItemTemplate` — the lean, image-free row for reading a series in order, for the same
   reason the Plex episode row is image-free.
 - `ApplyTvViewMode()` swaps template + panel and lights one of the three toolbar buttons via the

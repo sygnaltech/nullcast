@@ -139,7 +139,9 @@ URL under Nullcast's control — a platform CDN URL can rot without warning.
 > Nullcast.TV stills are **16:9**, not the 2:3 posters Plex serves. That is the whole reason
 > `TvTileItemTemplate` and `TvListItemTemplate` exist rather than reusing the Plex templates: a
 > 16:9 still cropped into a 2:3 frame is letterboxed down to a strip, which is exactly the frame
-> the maker chose not to show.
+> the maker chose not to show. The tile is still **134 DIP** wide, the same budget as the Plex
+> poster tile — the sidebar's content column fits two 146-DIP columns and no more, and a wider
+> tile drops to a single column rather than shrinking.
 
 ## 3. Playback and History
 
@@ -170,6 +172,15 @@ Two deliberate differences from a plain URL play:
 
 There is **no resume position** — the catalog keeps none, so `_seekOnPlay` is cleared rather than
 seeded, and nothing is reported back during playback the way Plex's timeline is.
+
+### The top-bar watch-page link
+
+A link button sits left of the settings gear and opens `https://nullcast.tv/v/{id}` for whatever
+is playing. It is visible **only while a Nullcast.TV film is the thing playing**, and its state is
+derived in `PlayUrl` from the history key that path already computes — not from a second flag a
+caller could forget to set. `PlayPlexItem` never reaches `PlayUrl`, so it clears the link by hand.
+The upshot is that the button follows what is actually on screen, including a film reached from
+History, the Ctrl+K palette, or auto-advance.
 
 ## 4. Error handling
 

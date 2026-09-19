@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -885,6 +886,45 @@ namespace VideoPlayer
 
             await PlayUrl(item.SourceUrl, item.Title,
                           historyUrl: $"nulltv://{item.VideoId}");
+        }
+
+        // ──────────────────────────────────────────────────────
+        // "Open on Nullcast.TV" — the top-bar link
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>The catalog id of the film currently playing, or null when it isn't one.</summary>
+        private string _activeTvVideoId;
+
+        /// <summary>
+        /// Record which Nullcast.TV film is playing (null for anything else) and show or hide
+        /// the top-bar link accordingly. Called from the playback paths rather than from the
+        /// tab, so the button follows what is actually on screen — including a film reached from
+        /// History, the Ctrl+K palette, or auto-advance.
+        /// </summary>
+        private void SetActiveTvVideo(string videoId)
+        {
+            _activeTvVideoId = string.IsNullOrWhiteSpace(videoId) ? null : videoId;
+
+            if (WatchOnNullcastButton != null)
+                WatchOnNullcastButton.Visibility =
+                    _activeTvVideoId == null ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private void WatchOnNullcast_Click(object sender, RoutedEventArgs e)
+        {
+            if (_activeTvVideoId == null) return;
+
+            var url = $"{NullcastTvAuthService.Origin}/v/{_activeTvVideoId}";
+            Telemetry.Track("nullcast_tv_open_web", new() { ["media_id"] = _activeTvVideoId });
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                App.Log($"[Nullcast.TV] Could not open {url}: {ex.Message}");
+            }
         }
 
         /// <summary>

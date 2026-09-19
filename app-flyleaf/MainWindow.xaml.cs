@@ -2138,9 +2138,11 @@ namespace VideoPlayer
                 _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.CurTime / 10000L);
 
             // Plex is a separate ecosystem — detach from the bookmarks position-save path.
+            // This path never reaches PlayUrl, so the Nullcast.TV link is cleared by hand.
             _activeMuid = null;
             _activePlex = item;
             _plexTimelineTick = 0;
+            SetActiveTvVideo(null);
 
             // Transport Next/Prev bridge to Plex's own episode queue; the flat queue is inactive.
             _queueKind    = QueueKind.Plex;
@@ -2947,6 +2949,13 @@ namespace VideoPlayer
                 if (_activePlex != null && _player?.Status == Status.Playing)
                     _ = _plex.ReportTimelineAsync(_activePlex, "stopped", _player.CurTime / 10000L);
                 _activePlex = null;
+
+                // The history key already says whether this is a Nullcast.TV film, so the
+                // "open on the web" button is driven off that rather than off a second flag a
+                // caller could forget to set. Anything else clears it.
+                SetActiveTvVideo(historyKey.StartsWith("nulltv://", StringComparison.OrdinalIgnoreCase)
+                    ? historyKey["nulltv://".Length..]
+                    : null);
 
                 HidePlaybackError();
                 StatusText.Text = "Loading video...";
