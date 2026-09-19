@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Settings"
-        Height="560" Width="540"
+        Height="620" Width="800"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         Background="#0F1118"
@@ -93,6 +93,10 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#8FA6FF"/>
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A3042"/>
+                                <Setter Property="Foreground" Value="#848B9F"/>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -116,6 +120,9 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#565C6D"/>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -136,6 +143,9 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Foreground" Value="#E7E9F1"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#3A4053"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -168,70 +178,95 @@
             </Setter>
         </Style>
 
-        <!-- ── Tab strip ──
-             Underlined tabs rather than folder tabs: the default TabItem chrome is light grey
-             and can't be recoloured without a full template anyway. -->
-        <Style x:Key="SettingsTabControl" TargetType="TabControl">
-            <Setter Property="Background"      Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
+        <!-- ══════════════════════════════════════════════════════
+             Left nav.
+
+             Replaces the old tab strip. A row of tabs across the top
+             could hold four or five before it started wrapping, and
+             there are now ten pages in three groups — a vertical rail
+             carries the grouping, and grows without redesigning.
+             ══════════════════════════════════════════════════════ -->
+
+        <!-- One nav row: rounded card with a 3px accent bar when selected, matching the house
+             list-item look used everywhere else in the app. -->
+        <Style x:Key="NavItemContainer" TargetType="ListBoxItem">
+            <Setter Property="Foreground"                 Value="#B7BCCB"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding"                    Value="0"/>
+            <Setter Property="Margin"                     Value="0,1"/>
+            <Setter Property="Cursor"                     Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="TabControl">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <Border Grid.Row="0" BorderBrush="#1AFFFFFF" BorderThickness="0,0,0,1">
-                                <!-- -1 bottom margin drops each tab's accent underline onto the
-                                     hairline instead of leaving a 1px gap under it. -->
-                                <TabPanel IsItemsHost="True" Background="Transparent"
-                                          Margin="0,0,0,-1"/>
-                            </Border>
-                            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"
-                                              Margin="0,20,0,0"/>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="8">
+                            <Grid>
+                                <Border x:Name="AccentBar" Width="3" HorizontalAlignment="Left"
+                                        Margin="0,8" CornerRadius="2" Background="#7D97FF"
+                                        Visibility="Collapsed"/>
+                                <ContentPresenter/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#217D97FF"/>
+                                <Setter TargetName="AccentBar" Property="Visibility" Value="Visible"/>
+                                <Setter Property="Foreground" Value="#EEF1FB"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Thin dark scrollbar — the house style, REQUIRED on every scrollable region
+             (see STYLE-GUIDE.md). Copied here because the dialog is its own Window and
+             cannot see MainWindow's resources. -->
+        <Style x:Key="ThinDarkScrollBar" TargetType="{x:Type ScrollBar}">
+            <Setter Property="Width"      Value="9"/>
+            <Setter Property="MinWidth"   Value="9"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Background="Transparent" Width="9">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Height="0"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="{x:Type Thumb}">
+                                                <Border x:Name="ThumbBd" Background="#24FFFFFF" CornerRadius="4" Margin="2,0"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBd" Property="Background" Value="#3DFFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Height="0"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
                         </Grid>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <Style x:Key="SettingsTabItem" TargetType="TabItem">
-            <Setter Property="Foreground" Value="#848B9F"/>
-            <Setter Property="FontSize"   Value="13"/>
-            <Setter Property="Cursor"     Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TabItem">
-                        <Grid Background="Transparent" Margin="0,0,22,0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="2"/>
-                            </Grid.RowDefinitions>
-                            <ContentPresenter Grid.Row="0" ContentSource="Header"
-                                              Margin="0,0,0,10"
-                                              VerticalAlignment="Center"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"
-                                              TextElement.FontWeight="{TemplateBinding FontWeight}"/>
-                            <Border x:Name="Underline" Grid.Row="1" Background="Transparent"/>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Foreground" Value="#EEF1FB"/>
-                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                <Setter TargetName="Underline" Property="Background" Value="#7D97FF"/>
-                            </Trigger>
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsSelected"  Value="False"/>
-                                    <Condition Property="IsMouseOver" Value="True"/>
-                                </MultiTrigger.Conditions>
-                                <Setter Property="Foreground" Value="#E7E9F1"/>
-                            </MultiTrigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <!-- Page title at the top of the right pane -->
+        <Style x:Key="PageTitle" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="17"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#EEF1FB"/>
+            <Setter Property="Margin"     Value="0,0,0,4"/>
         </Style>
 
         <!-- Field label above an input -->
@@ -246,6 +281,23 @@
             <Setter Property="FontSize"     Value="11"/>
             <Setter Property="Foreground"   Value="#848B9F"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin"       Value="0,0,0,6"/>
+        </Style>
+
+        <!-- The "use this provider" switch each provider page leads with -->
+        <Style x:Key="ProviderToggle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#E7E9F1"/>
+            <Setter Property="FontSize"   Value="13"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Margin"     Value="2,10,0,8"/>
+        </Style>
+
+        <!-- Hairline above an "Account" or secondary block -->
+        <Style x:Key="BlockHeading" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#B7BCCB"/>
+            <Setter Property="Margin"     Value="0,18,0,8"/>
         </Style>
     </Window.Resources>
 
@@ -272,86 +324,260 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="24,10,24,20">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>     <!-- tabs -->
-                <RowDefinition Height="Auto"/>  <!-- footer -->
-            </Grid.RowDefinitions>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="206"/>  <!-- nav rail -->
+                <ColumnDefinition Width="*"/>    <!-- page -->
+            </Grid.ColumnDefinitions>
 
-            <TabControl Grid.Row="0" x:Name="SettingsTabs"
-                        Style="{StaticResource SettingsTabControl}">
+            <!-- ══════════ Nav rail ══════════ -->
+            <Border Grid.Column="0" Background="#0C0E15" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0">
+                <ListBox x:Name="NavList"
+                         Margin="10,12,10,12"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         ItemContainerStyle="{StaticResource NavItemContainer}"
+                         SelectionChanged="Nav_SelectionChanged"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.Resources>
+                        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                    </ListBox.Resources>
+                    <ListBox.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}"
+                                               Foreground="#565C6D"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Margin="10,14,0,4"/>
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ListBox.GroupStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Label}" FontSize="13" Margin="12,8"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
 
-                <!-- ══════════ General ══════════ -->
-                <TabItem Header="General" Style="{StaticResource SettingsTabItem}">
-                    <StackPanel>
-                        <CheckBox x:Name="PinAllDesktopsCheck"
-                                  Content="Show on all virtual desktops"
-                                  Foreground="#E7E9F1" FontSize="13"
-                                  Margin="2,0,0,0"/>
-                        <TextBlock Style="{StaticResource HelpText}" Margin="22,6,0,0"
-                                   Text="The player window follows you between virtual desktops instead of staying on the one it was opened on. Leave this on unless you deliberately want Nullcast confined to a single desktop."/>
-                    </StackPanel>
-                </TabItem>
+            <!-- ══════════ Page + footer ══════════ -->
+            <Grid Grid.Column="1" Margin="26,18,26,18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                <!-- ══════════ Plex Media Server ══════════ -->
-                <TabItem Header="Plex Media Server" Style="{StaticResource SettingsTabItem}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource HelpText}"
-                                   Text="Point Nullcast at a Plex Media Server to browse and play its libraries from the Plex tab. Optional — leave the address blank to disable Plex."/>
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="0,0,10,0">
+                    <ScrollViewer.Resources>
+                        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                    </ScrollViewer.Resources>
 
-                        <TextBlock Text="Server address" Style="{StaticResource FieldLabel}"/>
-                        <Grid>
-                            <TextBox x:Name="ServerBox" Style="{StaticResource DarkTextBox}"/>
-                            <TextBlock x:Name="ServerPlaceholder"
-                                       Text="http://192.168.1.50:32400"
-                                       Foreground="#565C6D" FontSize="13" Margin="13,0,0,0"
-                                       VerticalAlignment="Center" IsHitTestVisible="False"/>
-                        </Grid>
+                    <!-- All pages live here; exactly one is visible. Named so the code-behind
+                         can flip them from one place (ShowPage). -->
+                    <Grid x:Name="PageHost">
 
-                        <TextBlock Text="Plex token (X-Plex-Token)" Style="{StaticResource FieldLabel}"/>
-                        <PasswordBox x:Name="TokenBox" Style="{StaticResource DarkPasswordBox}"
-                                     PasswordChanged="TokenBox_PasswordChanged"/>
+                        <!-- ══════════ General ══════════ -->
+                        <StackPanel x:Name="PageGeneral">
+                            <TextBlock Text="General" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Style="{StaticResource HelpText}"
+                                       Text="Behaviour of the player window itself."/>
 
-                        <Grid Margin="0,18,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" x:Name="TestButton" Content="Test connection"
-                                    Style="{StaticResource SurfaceButton}" Click="Test_Click"/>
-                            <TextBlock Grid.Column="1" x:Name="StatusText"
-                                       VerticalAlignment="Center" Margin="14,0,0,0"
-                                       FontSize="12" Foreground="#848B9F" TextWrapping="Wrap"/>
-                        </Grid>
-                    </StackPanel>
-                </TabItem>
+                            <CheckBox x:Name="PinAllDesktopsCheck"
+                                      Content="Show on all virtual desktops"
+                                      Foreground="#E7E9F1" FontSize="13"
+                                      Margin="2,14,0,0"/>
+                            <TextBlock Style="{StaticResource HelpText}" Margin="22,6,0,0"
+                                       Text="The player window follows you between virtual desktops instead of staying on the one it was opened on. Leave this on unless you deliberately want Nullcast confined to a single desktop."/>
+                        </StackPanel>
 
-                <!-- ══════════ Tether ══════════ -->
-                <TabItem Header="Tether" Style="{StaticResource SettingsTabItem}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource HelpText}"
-                                   Text="Provisioned app credential from Tether's “Register app…”. Used by every player to pull live cookies. Leave blank to use the built-in dev token."/>
+                        <!-- ══════════ Nullcast.TV ══════════ -->
+                        <StackPanel x:Name="PageNullcastTv" Visibility="Collapsed">
+                            <TextBlock Text="Nullcast.TV" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Style="{StaticResource HelpText}"
+                                       Text="Nullcast's own catalog of AI-generated film — browse by channel, creator, model, genre and series, and play straight from the source platform."/>
 
-                        <TextBlock Text="App ID" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="TetherAppIdBox" Style="{StaticResource DarkTextBox}"/>
+                            <CheckBox x:Name="TvEnabledCheck"
+                                      Content="Use Nullcast.TV"
+                                      Style="{StaticResource ProviderToggle}"
+                                      Checked="TvEnabled_Changed" Unchecked="TvEnabled_Changed"/>
+                            <TextBlock Style="{StaticResource HelpText}" Margin="22,0,0,0"
+                                       Text="Adds the Nullcast.TV tab to the sidebar and its source to Ctrl+K search. Signing in is required: the catalog withholds 18+ films from anonymous callers without saying so, so an unauthenticated connection would quietly be the wrong catalog."/>
 
-                        <TextBlock Text="Key (token)" Style="{StaticResource FieldLabel}"/>
-                        <PasswordBox x:Name="TetherTokenBox" Style="{StaticResource DarkPasswordBox}"
-                                     PasswordChanged="TetherTokenBox_PasswordChanged"/>
+                            <TextBlock Text="Account" Style="{StaticResource BlockHeading}"/>
+                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1"
+                                    CornerRadius="8" Padding="14,12">
+                                <StackPanel>
+                                    <TextBlock x:Name="TvAccountName"
+                                               Text="Not connected"
+                                               FontSize="13" Foreground="#E7E9F1"/>
+                                    <TextBlock x:Name="TvAccountEmail"
+                                               FontSize="11" Foreground="#848B9F" Margin="0,3,0,0"
+                                               Visibility="Collapsed"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                        <Button x:Name="TvConnectBtn" Content="Connect"
+                                                Style="{StaticResource AccentButton}"
+                                                Click="TvConnect_Click"/>
+                                        <Button x:Name="TvSignOutBtn" Content="Sign out"
+                                                Style="{StaticResource TextButton}"
+                                                Margin="8,0,0,0"
+                                                Click="TvSignOut_Click"/>
+                                        <Button x:Name="TvTestBtn" Content="Test connection"
+                                                Style="{StaticResource SurfaceButton}"
+                                                Margin="8,0,0,0"
+                                                Click="TvTest_Click"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="TvStatus"
+                                               FontSize="12" Foreground="#848B9F" Margin="0,12,0,0"
+                                               TextWrapping="Wrap"
+                                               Visibility="Collapsed"/>
+                                </StackPanel>
+                            </Border>
 
-                        <TextBlock Text="Dev token (fallback)" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="TetherDevTokenBox" Style="{StaticResource DarkTextBox}"/>
-                        <CheckBox x:Name="TetherDevFallbackCheck" Content="Use dev token as a fallback"
-                                  Foreground="#B7BCCB" FontSize="12" Margin="2,14,0,0"/>
-                    </StackPanel>
-                </TabItem>
-            </TabControl>
+                            <TextBlock Text="Personal access token (optional)" Style="{StaticResource FieldLabel}"/>
+                            <PasswordBox x:Name="TvTokenBox" Style="{StaticResource DarkPasswordBox}"
+                                         PasswordChanged="TvTokenBox_PasswordChanged"/>
+                            <TextBlock Style="{StaticResource HelpText}" Margin="2,8,0,0"
+                                       Text="For an install that cannot open a browser. Create one on nullcast.tv and paste it here; it never expires and is revoked from the site. A token set here is used instead of the browser sign-in above."/>
+                        </StackPanel>
 
-            <!-- Footer buttons — outside the tabs; Save commits every tab. -->
-            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-                <Button Content="Cancel" Style="{StaticResource TextButton}" Click="Cancel_Click" IsCancel="True" Margin="0,0,8,0"/>
-                <Button Content="Save"   Style="{StaticResource AccentButton}" Click="Save_Click" IsDefault="True"/>
-            </StackPanel>
+                        <!-- ══════════ Playlists ══════════ -->
+                        <StackPanel x:Name="PagePlaylists" Visibility="Collapsed">
+                            <TextBlock Text="Playlists" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Style="{StaticResource HelpText}"
+                                       Text="The bookmarks service this player was built around — your workspaces, their saved links, and the playback position that syncs between devices."/>
+
+                            <CheckBox x:Name="PlaylistsEnabledCheck"
+                                      Content="Use Playlists"
+                                      Style="{StaticResource ProviderToggle}"/>
+                            <TextBlock Style="{StaticResource HelpText}" Margin="22,0,0,0"
+                                       Text="Adds the Playlist tab to the sidebar and its source to Ctrl+K search. Turn it off if you only use this player for local, Plex or Nullcast.TV content."/>
+
+                            <TextBlock Text="Account" Style="{StaticResource BlockHeading}"/>
+                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1"
+                                    CornerRadius="8" Padding="14,12">
+                                <StackPanel>
+                                    <TextBlock x:Name="PlaylistAccountName"
+                                               Text="Not connected"
+                                               FontSize="13" Foreground="#E7E9F1"/>
+                                    <TextBlock x:Name="PlaylistAccountEmail"
+                                               FontSize="11" Foreground="#848B9F" Margin="0,3,0,0"
+                                               Visibility="Collapsed"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                        <Button x:Name="PlaylistConnectBtn" Content="Connect"
+                                                Style="{StaticResource AccentButton}"
+                                                Click="PlaylistConnect_Click"/>
+                                        <Button x:Name="PlaylistSignOutBtn" Content="Sign out"
+                                                Style="{StaticResource TextButton}"
+                                                Margin="8,0,0,0"
+                                                Click="PlaylistSignOut_Click"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="PlaylistStatus"
+                                               FontSize="12" Foreground="#848B9F" Margin="0,12,0,0"
+                                               TextWrapping="Wrap"
+                                               Visibility="Collapsed"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ══════════ Plex ══════════ -->
+                        <StackPanel x:Name="PagePlex" Visibility="Collapsed">
+                            <TextBlock Text="Plex Media Server" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Style="{StaticResource HelpText}"
+                                       Text="Point Nullcast at a Plex Media Server to browse and play its libraries from the Plex tab."/>
+
+                            <CheckBox x:Name="PlexEnabledCheck"
+                                      Content="Use Plex"
+                                      Style="{StaticResource ProviderToggle}"/>
+                            <TextBlock Style="{StaticResource HelpText}" Margin="22,0,0,0"
+                                       Text="Adds the Plex tab to the sidebar and its source to Ctrl+K search."/>
+
+                            <TextBlock Text="Server address" Style="{StaticResource FieldLabel}"/>
+                            <Grid>
+                                <TextBox x:Name="ServerBox" Style="{StaticResource DarkTextBox}"/>
+                                <TextBlock x:Name="ServerPlaceholder"
+                                           Text="http://192.168.1.50:32400"
+                                           Foreground="#565C6D" FontSize="13" Margin="13,0,0,0"
+                                           VerticalAlignment="Center" IsHitTestVisible="False"/>
+                            </Grid>
+
+                            <TextBlock Text="Plex token (X-Plex-Token)" Style="{StaticResource FieldLabel}"/>
+                            <PasswordBox x:Name="TokenBox" Style="{StaticResource DarkPasswordBox}"
+                                         PasswordChanged="TokenBox_PasswordChanged"/>
+
+                            <Grid Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" x:Name="TestButton" Content="Test connection"
+                                        Style="{StaticResource SurfaceButton}" Click="Test_Click"/>
+                                <TextBlock Grid.Column="1" x:Name="StatusText"
+                                           VerticalAlignment="Center" Margin="14,0,0,0"
+                                           FontSize="12" Foreground="#848B9F" TextWrapping="Wrap"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ══════════ Apple Podcasts ══════════ -->
+                        <StackPanel x:Name="PagePodcasts" Visibility="Collapsed">
+                            <TextBlock Text="Apple Podcasts" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Style="{StaticResource HelpText}"
+                                       Text="Search the public Apple Podcasts directory, open a show, and play its episodes. Nothing to configure and no account — the directory and the episode feeds are both open."/>
+
+                            <CheckBox x:Name="PodcastsEnabledCheck"
+                                      Content="Use Apple Podcasts"
+                                      Style="{StaticResource ProviderToggle}"/>
+                            <TextBlock Style="{StaticResource HelpText}" Margin="22,0,0,0"
+                                       Text="Adds the Podcasts tab to the sidebar."/>
+                        </StackPanel>
+
+                        <!-- ══════════ YouTube Music ══════════ -->
+                        <StackPanel x:Name="PageYtMusic" Visibility="Collapsed">
+                            <TextBlock Text="YouTube Music" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Style="{StaticResource HelpText}"
+                                       Text="Search YouTube Music and play tracks and pinned playlists as audio."/>
+
+                            <CheckBox x:Name="YtMusicEnabledCheck"
+                                      Content="Use YouTube Music"
+                                      Style="{StaticResource ProviderToggle}"/>
+                            <TextBlock Style="{StaticResource HelpText}" Margin="22,0,0,0"
+                                       Text="Adds the YT Music tab to the sidebar."/>
+
+                            <TextBlock Style="{StaticResource HelpText}" Margin="0,16,0,0"
+                                       Text="Your own library and Liked Music need a signed-in session, which comes from the Tether broker — see the Tether page under Advanced. Public search works without it."/>
+                        </StackPanel>
+
+                        <!-- ══════════ Tether ══════════ -->
+                        <StackPanel x:Name="PageTether" Visibility="Collapsed">
+                            <TextBlock Text="Tether" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Style="{StaticResource HelpText}"
+                                       Text="Provisioned app credential from Tether's “Register app…”. Used by every player to pull live cookies. Leave blank to use the built-in dev token."/>
+
+                            <TextBlock Text="App ID" Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="TetherAppIdBox" Style="{StaticResource DarkTextBox}"/>
+
+                            <TextBlock Text="Key (token)" Style="{StaticResource FieldLabel}"/>
+                            <PasswordBox x:Name="TetherTokenBox" Style="{StaticResource DarkPasswordBox}"
+                                         PasswordChanged="TetherTokenBox_PasswordChanged"/>
+
+                            <TextBlock Text="Dev token (fallback)" Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="TetherDevTokenBox" Style="{StaticResource DarkTextBox}"/>
+                            <CheckBox x:Name="TetherDevFallbackCheck" Content="Use dev token as a fallback"
+                                      Foreground="#B7BCCB" FontSize="12" Margin="2,14,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+
+                <!-- Footer buttons — outside the pages; Save commits every page. -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                    <Button Content="Cancel" Style="{StaticResource TextButton}" Click="Cancel_Click" IsCancel="True" Margin="0,0,8,0"/>
+                    <Button Content="Save"   Style="{StaticResource AccentButton}" Click="Save_Click" IsDefault="True"/>
+                </StackPanel>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

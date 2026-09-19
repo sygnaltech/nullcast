@@ -1,0 +1,201 @@
+---
+id: 2DtXwpnbR8zfKgiL7tefcd
+version: 2
+title: Nullcast.TV Integration — Technical Notes
+date: 2026-09-19
+description: How the desktop client authenticates against nullcast.tv, how it walks the catalog from channels down to films, and why a film is recorded in History by its catalog id rather than its platform URL.
+tags: [nullcast-tv, api, oauth, playback]
+---
+
+# Nullcast.TV Integration — Technical Notes
+
+Nullcast.TV is the first **first-party** source in this player: a catalog of AI-generated film,
+read over `https://nullcast.tv/api/v1`. It is browsed the way the Plex tab is browsed, but the
+catalog underneath has a different shape, and three of those differences are worth knowing
+before changing anything here.
+
+## The short version
+
+- **The versioned base is the contract.** `https://nullcast.tv/api/v1`. The bare `/api/...` path
+  is the first-party web app's cookie-authenticated alias and is same-origin only — never point
+  this client at it.
+- **Every list is paged on an opaque cursor.** `null` means the end. A client that ignores it has
+  the top twenty-four films and believes it has the catalog.
+- **A channel is a saved way of looking at the catalog**, and its `kind` is the only thing the
+  client branches on.
+- **Films live on somebody else's platform**, so playback is the ordinary yt-dlp path, not a
+  direct stream the way Plex is.
+
+## 1. Authentication
+
+The provider is **switched off by default** and turning it on is a decision to sign in.
+
+> [!IMPORTANT]
+> The catalog answers anonymously — but a signed-out caller has **18+ films filtered out of every
+> feed, directory, search and count, with no indication that anything is missing**. An
+> unauthenticated connection is therefore not "the catalog, minus a login prompt"; it is quietly
+> a different catalog. That is why `UpdateTvTabState` refuses to browse without a credential
+> rather than degrading silently.
+
+Two doors, both producing a plain bearer token, both treated identically by every route:
+
+| | OAuth 2.1 + PKCE | Personal access token |
+|---|---|---|
+| Where it's set | Settings ▸ Providers ▸ Nullcast.TV ▸ **Connect** | the same page's **Personal access token** field |
+| Lifetime | access 1 hour, refresh 30 days | until revoked on the site |
+| For | a desktop install with a browser | an install that can't open one |
+| Wins when both exist | — | **yes** — somebody who pasted one meant it |
+
+### Dynamic client registration
+
+There is no pre-issued `client_id` for this app. `NullcastTvAuthService.EnsureClientRegisteredAsync`
+registers one on first sign-in (RFC 7591) asking for a **public** client:
+
+```json
+{
+  "client_name": "Nullcast Player",
+  "redirect_uris": ["http://127.0.0.1:47892/callback"],
+  "token_endpoint_auth_method": "none"
+}
+```
+
+`token_endpoint_auth_method: "none"` matters — without it the server mints a `client_secret`, and
+a desktop application cannot keep one. The returned `client_id` is stored in `services.json`
+(`nullcast_tv.client_id`). It is **not a secret**, but it must persist: re-registering on every
+launch would litter the server with dead client rows.
+
+> [!WARNING]
+> **The refresh token rotates on use.** The server deletes the old pair the moment a refresh
+> succeeds. `RefreshAsync` therefore persists the *new* refresh token as well as the new access
+> token — dropping it would make the next refresh present a token the server has already
+> deleted. A failed refresh signs the session out locally rather than retrying forever.
+
+### Ports
+
+Three loopback listeners exist in this app and they must not collide:
+
+| Port | Owner |
+|---|---|
+| 47891 | Playlist OAuth callback |
+| **47892** | **Nullcast.TV OAuth callback** |
+| 47893 | Remote Control API |
+
+### Signing out
+
+This authorization server publishes **no revocation endpoint**, so signing out is a local act:
+the token file (`%AppData%\VideoPlayer\nullcast-tv-tokens.json`) is deleted and any stored
+personal access token is cleared. A personal token is revoked from the site.
+
+## 2. Walking the catalog
+
+`GET /public/channels` returns the browse groups. `kind` decides what asking for one gives you:
+
+| `kind` | What it is | `GET /public/channels/{slug}` returns |
+|---|---|---|
+| `query` | an ordering over the whole catalog (`trending`, `top`, `new`) | a page of `videos` |
+| `curated` | a hand-built shelf (`picks`) | a page of `videos` |
+| `facet` | the catalog **grouped** by a column (`models`, `creators`, `genres`) | a page of `facets` — a **directory** — with `videos` empty |
+
+The client does not branch on `kind` directly: `FetchTvPageAsync` reads **which list came back
+populated**, which is the answer rather than a guess. Naming a value (`?facet=@qaramood`) turns a
+facet channel into an ordinary feed.
+
+That maps onto the tab as: **Browse** → pick a channel → either films, or a wall of values you
+drill into. **Series** → the series list → a series' episodes. **Search** → one query across all
+three.
+
+> [!NOTE]
+> **`/public/channels/languages` is a 404.** There are four facets in the data model but only
+> three have a channel seeded, so `language` cannot be browsed even though every film carries it.
+> A language hit *can* still come back from search, tagged `facet: "language"` — `SlugForFacet`
+> resolves the fronting channel from the loaded channel list and returns `""` for language, and
+> `TvDrillInto` says so out loud rather than issuing a request that 404s.
+
+### Vocabularies
+
+Genre and language ids are a **closed set defined in the service's TypeScript and deliberately not
+served over HTTP**, so this client carries its own copy in `TvVocabulary`:
+
+- **Genres** are vendored verbatim from `shared/genres.ts` (53 entries). An unknown id falls back
+  to the slug with its hyphens opened out, which reads acceptably because the ids *are* slugified
+  labels — but a genre added server-side should be added here too.
+- **Languages** go through `CultureInfo`, which already knows every ISO 639-1 subtag the catalog
+  can store. Two values are not languages and are spelled out by hand: `zxx` ("No dialogue" — a
+  positive statement that somebody checked) and `mul` ("Multilingual").
+
+### Thumbnails
+
+Every film and every facet value has one, and the rule is one line:
+
+```csharp
+var thumb = video.posterUrl ?? video.thumbUrl;
+```
+
+`posterUrl` is a **relative** `/api/poster/{id}` path and must be joined to the origin
+(`NullcastTvService.AbsoluteUrl`). Prefer it: it is the still the maker chose, and the only image
+URL under Nullcast's control — a platform CDN URL can rot without warning.
+
+> [!NOTE]
+> Nullcast.TV stills are **16:9**, not the 2:3 posters Plex serves. That is the whole reason
+> `TvTileItemTemplate` and `TvListItemTemplate` exist rather than reusing the Plex templates: a
+> 16:9 still cropped into a 2:3 frame is letterboxed down to a strip, which is exactly the frame
+> the maker chose not to show.
+
+## 3. Playback and History
+
+A Nullcast.TV film is a link to YouTube, Vimeo, Dailymotion or Streamable, so it goes through the
+same yt-dlp resolution as any other page URL — `PlayTvItemAsync` calls `PlayUrl(item.SourceUrl, …)`.
+
+Two deliberate differences from a plain URL play:
+
+<dl>
+  <dt><strong>The title is the catalog's, not the platform's</strong></dt>
+  <dd>
+    <code>PlayUrl</code> now prefers a caller-supplied <code>displayTitle</code> over the title
+    yt-dlp reads off the platform page. A film titled by the catalog that curated it beats a
+    scraped page title, and the same applies to a YouTube&nbsp;Music track.
+  </dd>
+
+  <dt><strong>History is keyed by catalog id, not platform URL</strong></dt>
+  <dd>
+    The entry is recorded as <code>nulltv://&lt;id&gt;</code> via <code>PlayUrl</code>'s
+    <code>historyUrl</code> parameter. Two reasons: the platform URL is the catalog's to hand out
+    and caching a copy would pin a link that can rot, and — more immediately — most of the catalog
+    lives on YouTube, so a raw URL would make <code>IntegrationSource.Resolve</code> badge the
+    entire catalog as YouTube&nbsp;Music. Replay goes through
+    <code>PlayNullcastTvFromHistory</code>, which asks <code>GET /public/videos/{id}</code> for a
+    current source URL. This mirrors what Plex already does with <code>plex://&lt;ratingKey&gt;</code>.
+  </dd>
+</dl>
+
+There is **no resume position** — the catalog keeps none, so `_seekOnPlay` is cleared rather than
+seeded, and nothing is reported back during playback the way Plex's timeline is.
+
+## 4. Error handling
+
+`DescribeFailure` is the only place that knows what the catalog's status codes mean:
+
+| Status | Rendered as |
+|---|---|
+| `401` | "Nullcast.TV rejected the credential — sign in again from Settings." |
+| `403` | the server's own message — `{"error": "sign in to watch this", "signInRequired": true}`. The film **is** on air; it needs an identified viewer. Never a dead end. |
+| `404` | "No such channel or series on Nullcast.TV." |
+| other | the server's `error` field, or the status. |
+
+`200` with empty lists is **not an error**: a facet value with no matches, or a query under the
+server's minimum length, both answer 200. If a feed comes back empty, check the value against the
+directory rather than assuming a failure.
+
+## Where the code lives
+
+| Concern | File |
+|---|---|
+| OAuth, registration, token storage | `app-flyleaf/Services/NullcastTvAuthService.cs` |
+| Catalog reads, paging, thumbnails | `app-flyleaf/Services/NullcastTvService.cs` |
+| DTOs, vocabularies, the list row | `app-flyleaf/Models/NullcastTvItem.cs` |
+| The tab: segments, channels, drill, playback | `app-flyleaf/MainWindow.NullcastTv.cs` |
+| Templates (16:9 list / tile / episode) | `app-flyleaf/MainWindow.xaml` |
+| Settings page | `app-flyleaf/ServicesSettingsDialog.xaml` |
+
+The upstream contract is `src/shared/api.ts` in the service's own repository; the integration
+guide that describes it is `API-INTEGRATION.hd` there.

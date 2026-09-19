@@ -138,18 +138,32 @@ happens to land on, which is why the old gear looked thin and off-centre next to
   `Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"` — that keeps
   the template's hover trigger working, since the trigger sets the button's `Foreground`.
 
-## Tabs (settings dialog)
+## Settings navigation — a left rail, not tabs
 
-Tabs are **underlined**, not folder tabs — the default `TabItem` chrome is light grey and can't be
-recoloured without a full template anyway. `SettingsTabControl` draws a hairline (`#1AFFFFFF`)
-under the strip; `SettingsTabItem` gives the selected tab bright text (`#EEF1FB`), `SemiBold`, and
-a 2px accent underline (`#7D97FF`), with muted `#848B9F` → `#E7E9F1` on hover for the rest. The
-`TabPanel` carries `Margin="0,0,0,-1"` so the accent underline lands **on** the hairline instead of
-leaving a 1px gap beneath it.
+The settings dialog navigates with a **vertical rail** down its left edge, not a tab strip. A row
+of tabs held three or four before it wrapped, and a wrapped tab row loses the one thing tabs are
+for: showing the whole set at once. There are now ten pages in three groups (General · Providers ·
+Advanced), and a rail carries the grouping and grows down instead of across.
 
-Footer buttons (Cancel/Save) live **outside** the `TabControl` — one Save commits every tab. When
-validation fails for a field on another tab, switch to that tab before showing the message, or the
-button just appears dead.
+- The rail is a **grouped `ListBox`** (`NavList`) on `#0C0E15` with a `#1AFFFFFF` right hairline,
+  206px wide. Group headers are 11px `SemiBold` `#565C6D`, matching the Plex category popup.
+- Rows use `NavItemContainer` — the same house list-item look as everywhere else: rounded card,
+  `#217D97FF` tint and a 3px `#7D97FF` left bar when selected, `#12FFFFFF` on hover.
+- The right pane is a stack of `StackPanel` pages inside one `ScrollViewer`;
+  `Nav_SelectionChanged` shows exactly one. Page titles are 17px `SemiBold` `#EEF1FB`.
+- The dialog is its own `Window`, so it cannot see `MainWindow`'s resources —
+  **`ThinDarkScrollBar` is duplicated into its `Window.Resources`** and applied to both the rail
+  and the page `ScrollViewer`. Do not ship a settings scroll region without it.
+
+Footer buttons (Cancel/Save) live **outside** the pages — one Save commits every page. When
+validation fails for a field on another page, call `SelectPage` to go there before showing the
+message, or the button just appears dead.
+
+**Two commit semantics, on purpose.** Settings are gathered on Save and discarded by Cancel;
+sign-in and sign-out are remote actions that have already happened by the time the button returns,
+so they are reported out through `PlaylistAuthChanged` / `NullcastTvAuthChanged` and applied
+whichever way the dialog closed. A "Test connection" button therefore tests what is in the box
+**without persisting it**.
 
 ## The Plex results panel (reference implementation)
 
@@ -169,13 +183,33 @@ The Plex tab demonstrates the list conventions and the dual **list / tile** view
 - The view toggle is a three-button `IconButton` group above the list — list, tiles, and
   **full-screen tiles**. `ApplyPlexViewMode()` swaps `ItemTemplate` + `ItemsPanel` and highlights
   the active button; list/tile is persisted in `AppSettings.PlexTileView`.
-- Full-screen browse (`EnterPlexFullscreen`/`ExitPlexFullscreen`) expands the side panel across
+- Full-screen browse (`EnterBrowseFullscreen`/`ExitBrowseFullscreen`) expands the side panel across
   the video column (via the named `VideoColumn`/`PanelColumn`/`SidePanelColumn`), pauses playback,
   and resumes it on exit if it had been playing. It's a transient state — not persisted — and is
-  auto-dropped when you switch away from the Plex tab.
+  auto-dropped when you switch away from a browse tab. **Shared with Nullcast.TV**: the takeover is
+  a layout change and knows nothing about either catalog.
 
 Posters come from Plex's photo transcoder (`PlexService.ResolveThumbUrl`) so artwork is
 downloaded pre-sized rather than at full resolution.
+
+### The Nullcast.TV results panel — 16:9, not 2:3
+
+Nullcast.TV is browsed exactly like Plex (segment bar → channel picker → filter → breadcrumb →
+results) and reuses `PlexSegment`, `CategoryToggle`, `IconButton`, `ListItemContainer` and
+`PlexGenreChip` unchanged. **What it does not reuse is the artwork templates**, because its stills
+are 16:9 and a 16:9 still cropped into a 2:3 poster frame is letterboxed down to a strip.
+
+- `TvListItemTemplate` — 64×36 leading still; otherwise identical in rhythm to the Plex row.
+- `TvTileItemTemplate` — 140px tile with a **140 × 79** still (16:9 to the pixel), so two still fit
+  the sidebar's content column with the 9px scrollbar present. Runtime badge bottom-right, episode
+  badge bottom-left, drill chevron top-right.
+- `TvEpisodeItemTemplate` — the lean, image-free row for reading a series in order, for the same
+  reason the Plex episode row is image-free.
+- `ApplyTvViewMode()` swaps template + panel and lights one of the three toolbar buttons via the
+  shared `StyleViewToggleButton`; list/tile persists in `AppSettings.NullcastTvTileView`, kept
+  separate from `PlexTileView` because the two catalogs are worth browsing differently.
+- The catalog pages on an opaque cursor, so a **"Load more"** button sits under the list and is
+  shown only when the last response actually reported more. Appending keeps the scroll position.
 
 ### Sidebar tabs (vertical strip)
 
@@ -189,7 +223,12 @@ the content in the `*` column beside it. There is **no divider between the strip
 — the panel's own left border (video ↔ panel) is the only separator. The strip is wrapped in a
 `ScrollViewer` with the scrollbar **hidden** (`VerticalScrollBarVisibility="Hidden"`), so a very
 short window can still wheel-scroll to a tab but no stray scrollbar ever shows between tabs and
-content. Order: Playlist · History · Plex · Podcasts · YT Music.
+content. Order: Nullcast.TV · Playlist · History · Plex · Podcasts · YT Music — Nullcast's own
+catalog leads; everything after it is somebody else's service.
+
+Every tab except History is **hidden outright when its provider is switched off** in
+Settings ▸ Providers (`ApplyProviderTabs`). History is an aggregator rather than a source, so it is
+always present — which is also what guarantees the strip can never be empty.
 
 ### Menu items — checkmarks & separators
 

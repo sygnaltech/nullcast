@@ -65,6 +65,17 @@ namespace VideoPlayer.Models
             "Plex", "Plex", "#E5A00D",
             "M9,4 L13.5,12 L9,20 L12,20 L16.5,12 L12,4 Z");
 
+        // A television: screen outline, play triangle inside it, stand below. Even-odd (F0) so
+        // the inner rectangle knocks the screen out into an outline and the triangle — a third
+        // crossing — fills again, all from the one brand colour.
+        public static readonly IntegrationSource NullcastTv = new(
+            "NullcastTv", "Nullcast.TV", "#22D3EE",
+            "F0 M3,5 L21,5 L21,17 L3,17 Z " +
+            "M5,7 L19,7 L19,15 L5,15 Z " +
+            "M10.2,9 L14.8,11 L10.2,13 Z " +
+            "M10.8,17 L13.2,17 L13.2,19.4 L10.8,19.4 Z " +
+            "M7,19.4 L17,19.4 L17,21 L7,21 Z");
+
         public static readonly IntegrationSource YtMusic = new(
             "YtMusic", "YT Music", "#FF0000",
             "M6.5,17 A3,2.4 0 1 1 12.5,17 A3,2.4 0 1 1 6.5,17 Z " +
@@ -88,11 +99,12 @@ namespace VideoPlayer.Models
         private static readonly Dictionary<string, IntegrationSource> ByKey =
             new(StringComparer.OrdinalIgnoreCase)
             {
-                [Playlist.Key] = Playlist,
-                [Plex.Key]     = Plex,
-                [YtMusic.Key]  = YtMusic,
-                [Podcasts.Key] = Podcasts,
-                [History.Key]  = History,
+                [Playlist.Key]   = Playlist,
+                [Plex.Key]       = Plex,
+                [NullcastTv.Key] = NullcastTv,
+                [YtMusic.Key]    = YtMusic,
+                [Podcasts.Key]   = Podcasts,
+                [History.Key]    = History,
             };
 
         /// <summary>Look up a source by its key. Unknown keys fall back to Playlist.</summary>
@@ -111,6 +123,12 @@ namespace VideoPlayer.Models
 
             if (url.StartsWith("plex://", StringComparison.OrdinalIgnoreCase))
                 return Plex;
+
+            // Nullcast.TV films are recorded by catalog id, not by their platform URL — most of
+            // them live on YouTube, and the host check below would otherwise file the whole
+            // catalog under YT Music.
+            if (url.StartsWith("nulltv://", StringComparison.OrdinalIgnoreCase))
+                return NullcastTv;
 
             var host = TryGetHost(url);
             if (host != null &&

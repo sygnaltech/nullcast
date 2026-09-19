@@ -107,6 +107,7 @@ namespace VideoPlayer
                 switch (entry)
                 {
                     case Bookmark bm:        await PlayBookmark(bm);            break;
+                    case TvItem tv:          await PlayTvItemAsync(tv);         break;
                     case YtMusicItem yt:     await PlayYtMusicTrackAsync(yt);  break;
                     case PodcastEpisode pe:  await PlayPodcastEpisodeAsync(pe); break;
                 }

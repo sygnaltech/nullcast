@@ -27,7 +27,7 @@ using VideoPlayer.Services;
 
 namespace VideoPlayer
 {
-    public enum SidebarTab { Playlist, History, Plex, Podcasts, YtMusic }
+    public enum SidebarTab { NullcastTv, Playlist, History, Plex, Podcasts, YtMusic }
 
     public partial class MainWindow : Window
     {
@@ -72,6 +72,11 @@ namespace VideoPlayer
         private DispatcherTimer _sideOverlayHideTimer; // collapses ~0.3s after the pointer leaves
         private Grid            _sidePanelHome;         // SidePanel's normal grid parent (for restore)
         private double          _sidePanelHomeWidth;    // SidePanel.Width to restore after the overlay
+        // The docked width as authored in XAML, captured once. Full-screen browse sets Width to
+        // NaN to stretch, so it needs a fixed number to come back to — and it must not read
+        // _sidePanelHomeWidth, which the floating overlay re-captures (as NaN, if it engages
+        // while full-screen). Hard-coding it here is how the panel used to silently shrink.
+        private double          _sidePanelDockedWidth;
 
         // Playlist service
         private PlaylistAuthService _auth;
@@ -126,7 +131,9 @@ namespace VideoPlayer
         private List<PlexItem> _plexCurrentItems = new(); // list at the current drill depth
         private readonly List<PlexDrillFrame> _plexDrill = new();
         private int _plexLoadToken;                        // stale-guard for async browse loads
-        private bool _plexFullscreen;                      // full-screen browse takeover active
+        // Full-screen browse takeover. Shared by the Plex and Nullcast.TV tabs — the takeover
+        // is a layout change, not a Plex feature — and named for its first user.
+        private bool _plexFullscreen;
         private bool _plexResumeAfterFullscreen;           // was the player playing when we took over?
         private ICollectionView _plexCategoryView;         // grouped + filtered view over _plexCategories
         private string _plexCategoryFilter = "";           // current text in the category filter box
@@ -289,8 +296,9 @@ namespace VideoPlayer
 
             // Right-edge sidebar overlay: remember the panel's home so it can be
             // re-parented into a floating popup during fullscreen and back again.
-            _sidePanelHome      = SidePanel.Parent as Grid;
-            _sidePanelHomeWidth = SidePanel.Width;
+            _sidePanelHome        = SidePanel.Parent as Grid;
+            _sidePanelHomeWidth   = SidePanel.Width;
+            _sidePanelDockedWidth = SidePanel.Width;
             SidePanel.MouseEnter += SidePanel_MouseEnter;
             SidePanel.MouseLeave += SidePanel_MouseLeave;
         }
@@ -762,9 +770,14 @@ namespace VideoPlayer
 
             _services.Load();
             _plex = new PlexService(_services);
+            InitializeNullcastTv();
             // App-wide live-cookie broker client (shared by every player type, not just YT Music).
             _tether = new TetherClient(_services);
             UpdatePlexTabState();
+
+            // Hide the tabs of providers this install doesn't use, and land on the first one
+            // that survives. Done before any network work so the strip never flickers.
+            ApplyProviderTabs();
 
             await LoadSettingsAsync();
 
@@ -780,6 +793,7 @@ namespace VideoPlayer
             RefreshTransportToggles();
             UpdateCookieFileMenuState();
             ApplyPlexViewMode();   // restore the remembered Plex list/tile view
+            ApplyTvViewMode();     // ...and the Nullcast.TV one, which is remembered separately
             RestorePlexSort();     // restore the remembered Plex sort order
 
             await _history.LoadAsync();
@@ -800,6 +814,17 @@ namespace VideoPlayer
                 {
                     App.Log($"[Playlist] Startup load failed: {ex.Message}");
                 }
+            }
+
+            // Nullcast.TV restores its own session. Only when the provider is on — an install
+            // that doesn't use it should not be touching the network for it at launch. The tab
+            // was laid out above while the session was still unknown, so refresh it now that
+            // the answer is in.
+            if (_services.NullcastTvEnabled)
+            {
+                await LoadNullcastTvSessionAsync();
+                if (_activeTab == SidebarTab.NullcastTv) EnterNullcastTvTab();
+                else                                     UpdateTvTabState();
             }
 
             // Remote Control API (F-654) — additive local control surface. See MainWindow.Api.cs.
@@ -873,21 +898,14 @@ namespace VideoPlayer
             }
         }
 
+        /// <summary>
+        /// React to the playlist session changing. The name itself is shown on the Playlists
+        /// settings page, not in the chrome, so all that is left here is re-evaluating whether
+        /// the sidebar has anything to show.
+        /// </summary>
         private void UpdateLoginUI(string displayName)
         {
-            if (!string.IsNullOrEmpty(displayName))
-            {
-                UserDisplayName.Text       = displayName;
-                UserDisplayName.Visibility = Visibility.Visible;
-                ConnectButton.Visibility   = Visibility.Collapsed;
-                SignOutButton.Visibility   = Visibility.Visible;
-            }
-            else
-            {
-                UserDisplayName.Visibility = Visibility.Collapsed;
-                ConnectButton.Visibility   = Visibility.Visible;
-                SignOutButton.Visibility   = Visibility.Collapsed;
-            }
+            _ = displayName;
             UpdatePlaylistVisibility();
         }
 
@@ -927,10 +945,11 @@ namespace VideoPlayer
             _activeTab = tab;
             Telemetry.Track("tab_switched", new() { ["tab"] = tab.ToString() });
 
-            // Leaving Plex? Drop the full-screen browse takeover (and resume playback).
-            if (_plexFullscreen && tab != SidebarTab.Plex)
-                ExitPlexFullscreen(resumeVideo: true, reapply: true);
+            // Leaving a browse tab? Drop the full-screen takeover (and resume playback).
+            if (_plexFullscreen && tab != SidebarTab.Plex && tab != SidebarTab.NullcastTv)
+                ExitBrowseFullscreen(resumeVideo: true, reapply: true);
 
+            NullcastTvContent.Visibility = tab == SidebarTab.NullcastTv ? Visibility.Visible : Visibility.Collapsed;
             PlaylistContent.Visibility = tab == SidebarTab.Playlist ? Visibility.Visible : Visibility.Collapsed;
             HistoryContent.Visibility  = tab == SidebarTab.History  ? Visibility.Visible : Visibility.Collapsed;
             PlexContent.Visibility     = tab == SidebarTab.Plex     ? Visibility.Visible : Visibility.Collapsed;
@@ -942,21 +961,68 @@ namespace VideoPlayer
             var primary = (Brush)FindResource("TextPrimaryBrush");
             var muted   = (Brush)FindResource("TextMutedBrush");
 
+            StyleTab(NullcastTvTabButton, tab == SidebarTab.NullcastTv, accent, primary, muted);
             StyleTab(PlaylistTabButton, tab == SidebarTab.Playlist, accent, primary, muted);
             StyleTab(HistoryTabButton,  tab == SidebarTab.History,  accent, primary, muted);
             StyleTab(PlexTabButton,     tab == SidebarTab.Plex,     accent, primary, muted);
             StyleTab(PodcastsTabButton, tab == SidebarTab.Podcasts, accent, primary, muted);
             StyleTab(YtMusicTabButton,  tab == SidebarTab.YtMusic,  accent, primary, muted);
 
-            if (tab == SidebarTab.History) ApplyHistorySubTab();
-            if (tab == SidebarTab.Plex)    EnterPlexTab();
-            if (tab == SidebarTab.YtMusic) EnterYtMusicTab();
+            if (tab == SidebarTab.History)    ApplyHistorySubTab();
+            if (tab == SidebarTab.Plex)       EnterPlexTab();
+            if (tab == SidebarTab.YtMusic)    EnterYtMusicTab();
+            if (tab == SidebarTab.NullcastTv) EnterNullcastTvTab();
         }
 
         private static void StyleTab(Button btn, bool active, Brush accent, Brush primary, Brush muted)
         {
             btn.Foreground  = active ? primary : muted;
             btn.BorderBrush = active ? accent  : Brushes.Transparent;
+        }
+
+        // ──────────────────────────────────────────────────────
+        // Provider switches → which sidebar tabs exist at all
+        // ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Show a tab only when its provider is switched on in Settings ▸ Providers, and move
+        /// off the active tab if it has just been switched off. History is not a provider — it
+        /// is an aggregator of whatever did play — so it is always there, which also guarantees
+        /// the strip is never empty.
+        /// </summary>
+        private void ApplyProviderTabs()
+        {
+            if (PlaylistTabButton == null) return;   // called before the UI is ready
+
+            void Show(Button b, bool on) => b.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+
+            Show(NullcastTvTabButton, _services.NullcastTvEnabled);
+            Show(PlaylistTabButton,   _services.PlaylistsEnabled);
+            Show(PlexTabButton,       _services.PlexEnabled);
+            Show(PodcastsTabButton,   _services.PodcastsEnabled);
+            Show(YtMusicTabButton,    _services.YtMusicEnabled);
+
+            if (!IsTabEnabled(_activeTab))
+                SelectTab(FirstEnabledTab());
+        }
+
+        private bool IsTabEnabled(SidebarTab tab) => tab switch
+        {
+            SidebarTab.NullcastTv => _services.NullcastTvEnabled,
+            SidebarTab.Playlist   => _services.PlaylistsEnabled,
+            SidebarTab.Plex       => _services.PlexEnabled,
+            SidebarTab.Podcasts   => _services.PodcastsEnabled,
+            SidebarTab.YtMusic    => _services.YtMusicEnabled,
+            _                     => true,   // History
+        };
+
+        /// <summary>The leftmost tab still on show, falling back to History (which always is).</summary>
+        private SidebarTab FirstEnabledTab()
+        {
+            foreach (var tab in new[] { SidebarTab.NullcastTv, SidebarTab.Playlist, SidebarTab.Plex,
+                                        SidebarTab.Podcasts, SidebarTab.YtMusic })
+                if (IsTabEnabled(tab)) return tab;
+            return SidebarTab.History;
         }
 
         // ──────────────────────────────────────────────────────
@@ -1038,6 +1104,13 @@ namespace VideoPlayer
                     return;
                 }
 
+                // Same for Nullcast.TV films, stored as nulltv://<id>.
+                if (entry.Url.StartsWith("nulltv://", StringComparison.OrdinalIgnoreCase))
+                {
+                    await PlayNullcastTvFromHistory(entry.Url);
+                    return;
+                }
+
                 Telemetry.Track("media_play", new()
                 {
                     ["source"] = "queue",
@@ -1095,6 +1168,14 @@ namespace VideoPlayer
                 if (entry.Url.StartsWith("plex://", StringComparison.OrdinalIgnoreCase))
                 {
                     await PlayPlexFromHistory(entry.Url);
+                    return;
+                }
+
+                // Nullcast.TV films are stored as nulltv://<id> — ask the catalog for the
+                // platform URL rather than caching one that can rot.
+                if (entry.Url.StartsWith("nulltv://", StringComparison.OrdinalIgnoreCase))
+                {
+                    await PlayNullcastTvFromHistory(entry.Url);
                     return;
                 }
 
@@ -1234,23 +1315,40 @@ namespace VideoPlayer
         // Services (gear) + Plex
         // ──────────────────────────────────────────────────────
 
-        private void OpenServices_Click(object sender, RoutedEventArgs e)
+        private async void OpenServices_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new ServicesSettingsDialog(_services, _settings) { Owner = this };
-            if (dialog.ShowDialog() == true)
-            {
-                // General tab writes straight onto _settings, so persist and re-apply anything
-                // that has a live effect on the window.
-                SaveSettings();
-                ApplyDesktopPin();
+            var dialog = new ServicesSettingsDialog(_services, _settings, _auth, _tvAuth) { Owner = this };
+            bool saved = dialog.ShowDialog() == true;
 
-                // Config changed — rebuild the client and reload the Plex tab from scratch.
-                _plex = new PlexService(_services);
-                _plexSectionsLoaded = false;
-                _plexGenreCache.Clear();
-                if (_activeTab == SidebarTab.Plex) EnterPlexTab();
-                else UpdatePlexTabState();
+            // Sign-in and sign-out are real actions that already happened inside the dialog —
+            // they are not part of Save and are not undone by Cancel. So they are applied
+            // whichever way the dialog closed.
+            if (dialog.PlaylistAuthChanged)
+                await ApplyPlaylistAuthChangeAsync();
+
+            if (dialog.NullcastTvAuthChanged)
+            {
+                _tvChannelsLoaded = false;
+                if (_activeTab == SidebarTab.NullcastTv) EnterNullcastTvTab();
+                else UpdateTvTabState();
             }
+
+            if (!saved) return;
+
+            // The General page writes straight onto _settings, so persist and re-apply anything
+            // with a live effect on the window.
+            SaveSettings();
+            ApplyDesktopPin();
+
+            // Provider switches may have added or removed whole tabs.
+            ApplyProviderTabs();
+
+            // Plex config may have changed — rebuild the client and reload its tab from scratch.
+            _plex = new PlexService(_services);
+            _plexSectionsLoaded = false;
+            _plexGenreCache.Clear();
+            if (_activeTab == SidebarTab.Plex) EnterPlexTab();
+            else UpdatePlexTabState();
         }
 
         /// <summary>Shows the configure/empty/results state for the Plex tab.</summary>
@@ -1313,12 +1411,12 @@ namespace VideoPlayer
 
         private void PlexListView_Click(object sender, RoutedEventArgs e) => SetPlexViewMode(tiles: false);
         private void PlexTileView_Click(object sender, RoutedEventArgs e) => SetPlexViewMode(tiles: true);
-        private void PlexFullscreenView_Click(object sender, RoutedEventArgs e) => TogglePlexFullscreen();
+        private void PlexFullscreenView_Click(object sender, RoutedEventArgs e) => ToggleBrowseFullscreen();
 
         /// <summary>Pick the compact list or poster tiles (and leave full-screen browse if active).</summary>
         private void SetPlexViewMode(bool tiles)
         {
-            if (_plexFullscreen) ExitPlexFullscreen(resumeVideo: true, reapply: false);
+            if (_plexFullscreen) ExitBrowseFullscreen(resumeVideo: true, reapply: false);
             if (_settings.PlexTileView != tiles)
             {
                 _settings.PlexTileView = tiles;
@@ -1352,12 +1450,13 @@ namespace VideoPlayer
             if (!ReferenceEquals(PlexResultsBox.ItemsPanel, panel)) PlexResultsBox.ItemsPanel   = panel;
 
             // Highlight exactly one of the three toolbar buttons.
-            StylePlexViewButton(PlexListViewBtn,       !_settings.PlexTileView && !_plexFullscreen);
-            StylePlexViewButton(PlexTileViewBtn,        _settings.PlexTileView && !_plexFullscreen);
-            StylePlexViewButton(PlexFullscreenViewBtn,  _plexFullscreen);
+            StyleViewToggleButton(PlexListViewBtn,       !_settings.PlexTileView && !_plexFullscreen);
+            StyleViewToggleButton(PlexTileViewBtn,        _settings.PlexTileView && !_plexFullscreen);
+            StyleViewToggleButton(PlexFullscreenViewBtn,  _plexFullscreen);
         }
 
-        private static void StylePlexViewButton(Button b, bool active)
+        /// <summary>Light exactly one button of a list/tile/full-screen trio. Shared by both browse tabs.</summary>
+        private static void StyleViewToggleButton(Button b, bool active)
         {
             if (b == null) return;
             b.Foreground = active ? SegActiveFg : SegInactiveFg;
@@ -1365,18 +1464,23 @@ namespace VideoPlayer
         }
 
         // ──────────────────────────────────────────────────────
-        // Full-screen browse: the Plex panel takes over the video
-        // area so posters fill the window. Playback pauses while it's
+        // Full-screen browse: the side panel takes over the video
+        // area so artwork fills the window. Playback pauses while it's
         // up and resumes when we collapse back down.
+        //
+        // Shared by both browse tabs (Plex and Nullcast.TV) — the
+        // takeover is a layout change and knows nothing about either
+        // catalog; only the Plex timeline report below is specific,
+        // and it no-ops when a Plex item isn't the thing playing.
         // ──────────────────────────────────────────────────────
 
-        private void TogglePlexFullscreen()
+        private void ToggleBrowseFullscreen()
         {
-            if (_plexFullscreen) ExitPlexFullscreen(resumeVideo: true, reapply: true);
-            else                 EnterPlexFullscreen();
+            if (_plexFullscreen) ExitBrowseFullscreen(resumeVideo: true, reapply: true);
+            else                 EnterBrowseFullscreen();
         }
 
-        private void EnterPlexFullscreen()
+        private void EnterBrowseFullscreen()
         {
             if (_plexFullscreen) return;
             _plexFullscreen = true;
@@ -1398,9 +1502,10 @@ namespace VideoPlayer
             PlaylistTab.Visibility = Visibility.Collapsed;
 
             ApplyPlexViewMode();
+            ApplyTvViewMode();
         }
 
-        private void ExitPlexFullscreen(bool resumeVideo, bool reapply)
+        private void ExitBrowseFullscreen(bool resumeVideo, bool reapply)
         {
             if (!_plexFullscreen) return;
             _plexFullscreen = false;
@@ -1409,7 +1514,7 @@ namespace VideoPlayer
             VideoColumn.Width     = new GridLength(1, GridUnitType.Star);
             PanelColumn.Width     = GridLength.Auto;
             SidePanelColumn.Width = GridLength.Auto;
-            SidePanel.Width       = 325;
+            SidePanel.Width       = _sidePanelDockedWidth;
             PlaylistTab.Visibility = Visibility.Visible;
 
             if (resumeVideo && _plexResumeAfterFullscreen && _player != null)
@@ -1420,7 +1525,7 @@ namespace VideoPlayer
             }
             _plexResumeAfterFullscreen = false;
 
-            if (reapply) ApplyPlexViewMode();
+            if (reapply) { ApplyPlexViewMode(); ApplyTvViewMode(); }
         }
 
         // ──────────────────────────────────────────────────────
@@ -2013,7 +2118,7 @@ namespace VideoPlayer
             {
                 // Picking something to play collapses the full-screen takeover back to the
                 // split view. Don't resume the old paused item — we're starting a new one.
-                if (_plexFullscreen) ExitPlexFullscreen(resumeVideo: false, reapply: true);
+                if (_plexFullscreen) ExitBrowseFullscreen(resumeVideo: false, reapply: true);
                 PlayPlexItem(item);
             }
         }
@@ -2416,35 +2521,38 @@ namespace VideoPlayer
         private void PodcastBack_Click(object sender, RoutedEventArgs e) => ShowPodcastShowResults();
 
         // ──────────────────────────────────────────────────────
-        // Login / sign-out
+        // Playlist sign-in state
+        //
+        // Signing in and out happens on Settings ▸ Providers ▸ Playlists, not on the top bar:
+        // there are several accounts to hold now, and one pair of buttons could only ever
+        // speak for the first of them. What is left here is reacting to the result.
         // ──────────────────────────────────────────────────────
 
-        private async void Connect_Click(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Bring the playlist tab in line with whatever the settings dialog just did to the
+        /// session — reload it when signed in, empty it when signed out.
+        /// </summary>
+        private async Task ApplyPlaylistAuthChangeAsync()
         {
-            ConnectButton.IsEnabled = false;
-            try
+            if (_auth?.IsSignedIn == true)
             {
-                var tokens = await _auth.LoginAsync();
-                UpdateLoginUI(tokens.DisplayName);
-                Telemetry.SetUser(tokens.Email, tokens.DisplayName);
-                await LoadPlaylistAsync();
+                Telemetry.SetUser(_auth.Email, _auth.DisplayName);
+                UpdateLoginUI(_auth.DisplayName);
+                try
+                {
+                    await LoadPlaylistAsync();
+                }
+                catch (Exception ex)
+                {
+                    App.Log($"[Playlist] Reload after sign-in failed: {ex.Message}");
+                }
             }
-            catch (Exception ex)
+            else
             {
-                MessageBox.Show($"Sign-in failed: {ex.Message}", "Playlist", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Telemetry.ClearUser();
+                PlaylistItems.Clear();
+                UpdateLoginUI(null);
             }
-            finally
-            {
-                ConnectButton.IsEnabled = true;
-            }
-        }
-
-        private async void SignOut_Click(object sender, RoutedEventArgs e)
-        {
-            Telemetry.ClearUser();
-            await _auth.SignOutAsync();
-            PlaylistItems.Clear();
-            UpdateLoginUI(null);
         }
 
         // ──────────────────────────────────────────────────────
@@ -2821,9 +2929,17 @@ namespace VideoPlayer
         /// ~1,800 sites (YouTube, Reddit, Facebook, TikTok, Vimeo, ...). Split-stream
         /// sources (separate video+audio) are recombined via <see cref="_pendingExternalAudioUrl"/>.
         /// </summary>
+        /// <param name="historyUrl">
+        /// What to record in local History instead of <paramref name="url"/>. Only a caller
+        /// whose item has a stabler identity than its platform link passes this — a Nullcast.TV
+        /// film is recorded as <c>nulltv://{id}</c>, so the entry survives the platform URL
+        /// rotting and is badged as the catalog rather than as YouTube.
+        /// </param>
         private async Task PlayUrl(string url, string displayTitle = null, bool forceDirect = false,
-                                  bool audioOnly = false, bool? cookieOverride = null)
+                                  bool audioOnly = false, bool? cookieOverride = null,
+                                  string historyUrl = null)
         {
+            var historyKey = string.IsNullOrEmpty(historyUrl) ? url : historyUrl;
             try
             {
                 // Leaving the Plex ecosystem — report stop and detach so Timer_Tick
@@ -2849,7 +2965,7 @@ namespace VideoPlayer
                 {
                     var directTitle = displayTitle ?? DeriveTitleFromUrl(url);
                     SetWindowTitle(directTitle);
-                    _history.Record(url, directTitle);
+                    _history.Record(historyKey, directTitle);
                     if (HistoryContent.Visibility == Visibility.Visible)
                         RefreshHistoryView();
 
@@ -2865,15 +2981,19 @@ namespace VideoPlayer
                     return;
                 }
 
-                var (title, videoUrl, audioUrl) = await ResolveWithYtDlpAsync(url, audioOnly, cookieOverride);
+                var (resolvedTitle, videoUrl, audioUrl) = await ResolveWithYtDlpAsync(url, audioOnly, cookieOverride);
 
                 if (string.IsNullOrEmpty(videoUrl))
                     throw new Exception("Could not resolve a playable stream for this URL.");
 
+                // A caller that named the item wins over yt-dlp's read of the platform page: a
+                // Nullcast.TV film or a YT Music track is titled by its own catalog, and that is
+                // the title worth showing and recording.
+                var title = string.IsNullOrWhiteSpace(displayTitle) ? resolvedTitle : displayTitle;
                 SetWindowTitle(title);
 
                 // Record to local-only history (de-duped by URL, most-recent first).
-                _history.Record(url, title);
+                _history.Record(historyKey, title);
                 if (HistoryContent.Visibility == Visibility.Visible)
                     RefreshHistoryView();
 

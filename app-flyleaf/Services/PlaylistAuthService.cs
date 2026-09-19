@@ -30,6 +30,8 @@ namespace VideoPlayer.Services
 
         public bool   IsSignedIn   => _tokens != null && !string.IsNullOrEmpty(_tokens.AccessToken);
         public string DisplayName  => _tokens?.DisplayName ?? "";
+        /// <summary>The signed-in account's address, for the Settings page and telemetry identity.</summary>
+        public string Email        => _tokens?.Email ?? "";
 
         // ──────────────────────────────────────────────────────
         // Public API

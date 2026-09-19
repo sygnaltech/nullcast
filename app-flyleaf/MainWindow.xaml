@@ -866,6 +866,186 @@
         </ItemsPanelTemplate>
 
         <!-- ══════════════════════════════════════════════════════
+             Nullcast.TV results — the same list/tile pair as Plex,
+             but every still is 16:9 rather than a 2:3 poster. That
+             one difference is why these are separate templates and
+             not a Plex template with a different binding: a 16:9
+             still in a 2:3 frame is cropped to a letterbox, which
+             is exactly the frame the maker chose not to show.
+             ══════════════════════════════════════════════════════ -->
+
+        <!-- Compact list row: 16:9 still · title / credits / meta / genres · drill chevron -->
+        <DataTemplate x:Key="TvListItemTemplate">
+            <Grid Margin="11,9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <!-- Leading art: 64×36 (16:9), with an episode badge for a series episode.
+                     The whole column collapses when there is neither. -->
+                <Grid Grid.Column="0" Width="64" Height="36" Margin="0,0,11,0"
+                      VerticalAlignment="Top"
+                      Visibility="{Binding HasLeadArt, Converter={StaticResource BoolToVisibility}}">
+                    <Border CornerRadius="4" Background="#22000000" ClipToBounds="True"
+                            Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}">
+                        <Image ctrl:AsyncImage.Url="{Binding ThumbUrl}" ctrl:AsyncImage.DecodeWidth="160"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="LowQuality"/>
+                    </Border>
+                    <Border Background="#CC0F1118" CornerRadius="3" Padding="4,1"
+                            HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2"
+                            Visibility="{Binding HasEpisodeBadge, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding EpisodeBadge}" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="#9DB0FF"/>
+                    </Border>
+                </Grid>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                               TextWrapping="Wrap" FontSize="14" FontWeight="Medium"
+                               LineHeight="19" Foreground="#E7E9F1"/>
+                    <TextBlock Text="{Binding Subtitle}"
+                               FontSize="12" Foreground="#848B9F" Margin="0,6,0,0"
+                               TextTrimming="CharacterEllipsis">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Subtitle}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding MetaLine}"
+                               FontSize="12" Foreground="#7D97FF" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding TagLine}"
+                               FontSize="11" Foreground="#848B9F" Margin="0,4,0,0"
+                               TextTrimming="CharacterEllipsis"
+                               Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibility}}"/>
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="›" FontSize="20" Foreground="#565C6D"
+                           VerticalAlignment="Center" Margin="8,0,4,0"
+                           Visibility="{Binding IsContainer, Converter={StaticResource BoolToVisibility}}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- 16:9 tile: still · title · meta · genre chips.
+             140 wide (+12 margin) so two fit the sidebar's content column; the still is
+             140 × 79, which is 16:9 to the pixel. More columns appear in full-screen browse. -->
+        <DataTemplate x:Key="TvTileItemTemplate">
+            <Grid Width="140" Margin="6,6,6,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Height="79" CornerRadius="8"
+                        Background="#1AFFFFFF" ClipToBounds="True">
+                    <Grid>
+                        <TextBlock Text="📺" FontSize="26" Opacity="0.35"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Image ctrl:AsyncImage.Url="{Binding ThumbUrl}" ctrl:AsyncImage.DecodeWidth="280"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="LowQuality"
+                               Visibility="{Binding HasThumb, Converter={StaticResource BoolToVisibility}}"/>
+                        <!-- Drill-in badge for a facet value or a series -->
+                        <Border Background="#B30F1118" CornerRadius="11" Width="22" Height="22"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
+                                Visibility="{Binding IsContainer, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="›" FontSize="15" Foreground="#E7E9F1"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Margin="0,-2,0,0"/>
+                        </Border>
+                        <!-- Runtime, bottom-right, the way every video thumbnail does it -->
+                        <Border Background="#CC0F1118" CornerRadius="4" Padding="5,1"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="5">
+                            <TextBlock Text="{Binding DurationLabel}" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#E7E9F1"/>
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DurationLabel}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                        <!-- Episode number, bottom-left -->
+                        <Border Background="#CC0F1118" CornerRadius="4" Padding="5,1"
+                                HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="5"
+                                Visibility="{Binding HasEpisodeBadge, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding EpisodeBadge}" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="#9DB0FF"/>
+                        </Border>
+                    </Grid>
+                </Border>
+                <TextBlock Grid.Row="1" Text="{Binding Title}"
+                           FontSize="13" FontWeight="Medium" Foreground="#E7E9F1"
+                           Margin="1,7,1,0" TextWrapping="Wrap" MaxHeight="36"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Row="2" Text="{Binding Subtitle}"
+                           FontSize="11" Foreground="#848B9F" Margin="1,3,1,0"
+                           TextTrimming="CharacterEllipsis"/>
+                <ItemsControl Grid.Row="3" ItemsSource="{Binding Genres}"
+                              Margin="1,2,1,0"
+                              ItemTemplate="{StaticResource PlexGenreChip}"
+                              Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibility}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Episode row: lean and image-free, for reading a series in order. Same reasoning as
+             the Plex episode row — stills add nothing inside a single run and slow the list. -->
+        <DataTemplate x:Key="TvEpisodeItemTemplate">
+            <Grid Margin="11,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="34"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding EpisodeNumberLabel}"
+                           FontSize="12" FontWeight="SemiBold" Foreground="#7D97FF"
+                           VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                               TextWrapping="Wrap" FontSize="14" FontWeight="Medium"
+                               LineHeight="19" Foreground="#E7E9F1"/>
+                    <TextBlock Text="{Binding Subtitle}"
+                               FontSize="12" Foreground="#848B9F" Margin="0,3,0,0"
+                               TextTrimming="CharacterEllipsis">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Subtitle}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="{Binding DurationLabel}"
+                           FontSize="12" Foreground="#565C6D"
+                           VerticalAlignment="Center" Margin="8,0,4,0"/>
+            </Grid>
+        </DataTemplate>
+
+        <ItemsPanelTemplate x:Key="TvListPanel">
+            <VirtualizingStackPanel/>
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="TvTilePanel">
+            <WrapPanel Orientation="Horizontal"/>
+        </ItemsPanelTemplate>
+
+        <!-- ══════════════════════════════════════════════════════
              Video right-click menu (YouTube-style, translucent)
              ══════════════════════════════════════════════════════ -->
         <!-- Leaf row look, shared by the plain-item and submenu-header templates below. -->
@@ -1086,7 +1266,10 @@
                     </MenuItem>
                 </Menu>
 
-                <!-- Login status -->
+                <!-- Right-hand chrome. Sign-in used to live here as a "Connect to Playlist"
+                     button; it now sits on each provider's own Settings page, because there
+                     are several accounts to hold and one button could only ever speak for the
+                     first of them. -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
                     <!-- Services / settings gear -->
                     <Button x:Name="ServicesButton"
@@ -1115,21 +1298,6 @@
                             </ControlTemplate>
                         </Button.Template>
                     </Button>
-                    <TextBlock x:Name="UserDisplayName"
-                               Foreground="#E7E9F1"
-                               VerticalAlignment="Center"
-                               Margin="0,0,16,0"
-                               FontSize="13"
-                               Visibility="Collapsed"/>
-                    <Button x:Name="ConnectButton"
-                            Content="Connect to Playlist"
-                            Click="Connect_Click"
-                            Style="{StaticResource AccentButton}"/>
-                    <Button x:Name="SignOutButton"
-                            Content="Sign out"
-                            Click="SignOut_Click"
-                            Style="{StaticResource TextButton}"
-                            Visibility="Collapsed"/>
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -1268,6 +1436,18 @@
                                  label. The badge colour is fixed per source (StyleTab only recolours
                                  the label text). History uses a neutral clock — it's an aggregator. -->
                             <StackPanel Orientation="Vertical" Margin="0,12">
+                                <!-- Nullcast's own catalog leads the strip; every other tab is
+                                     somebody else's service. Each tab is hidden outright when its
+                                     provider is switched off in Settings ▸ Providers. -->
+                                <Button x:Name="NullcastTvTabButton"
+                                        Click="ShowNullcastTvTab_Click"
+                                        Style="{StaticResource VerticalTabButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ctrl:SourceBadge SourceKey="NullcastTv" Size="18"
+                                                          VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Nullcast.TV" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="PlaylistTabButton"
                                         Click="ShowPlaylistTab_Click"
                                         Style="{StaticResource VerticalTabButton}"
@@ -1984,6 +2164,299 @@
                     </Grid>
                     <!-- end PlexContent -->
 
+                    <!-- ══════════════════════════════════════════════════════
+                         Nullcast.TV content.
+
+                         Laid out like the Plex tab on purpose — segment bar,
+                         category dropdown, filter box, breadcrumb, results —
+                         because the two are browsed the same way and the muscle
+                         memory should carry over. What differs is the shape of
+                         the catalog underneath: "Browse" walks channels (a saved
+                         way of looking at the catalog), and a facet channel opens
+                         a directory of values rather than a feed.
+                         ══════════════════════════════════════════════════════ -->
+                    <Grid x:Name="NullcastTvContent" Grid.Column="1" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>  <!-- segment bar -->
+                            <RowDefinition Height="Auto"/>  <!-- channel dropdown -->
+                            <RowDefinition Height="Auto"/>  <!-- filter / search box -->
+                            <RowDefinition Height="Auto"/>  <!-- breadcrumb -->
+                            <RowDefinition Height="Auto"/>  <!-- status / empty state -->
+                            <RowDefinition Height="Auto"/>  <!-- sign-in prompt -->
+                            <RowDefinition Height="Auto"/>  <!-- view toggle toolbar -->
+                            <RowDefinition Height="*"/>     <!-- results list -->
+                            <RowDefinition Height="Auto"/>  <!-- load more -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Browse / Series / Search. Fixed set — unlike Plex there are no
+                             per-server libraries to enumerate. Styled active/inactive in code. -->
+                        <WrapPanel x:Name="TvSegmentBar"
+                                   Grid.Row="0"
+                                   Margin="20,14,16,2">
+                            <Button x:Name="TvBrowseSegment" Content="Browse" Tag="Browse"
+                                    Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
+                            <Button x:Name="TvSeriesSegment" Content="Series" Tag="Series"
+                                    Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
+                            <Button x:Name="TvSearchSegment" Content="Search" Tag="Search"
+                                    Style="{StaticResource PlexSegment}" Click="TvSegment_Click"/>
+                        </WrapPanel>
+
+                        <!-- Channel selector (Views + Browse by) with a type-to-filter popup -->
+                        <Grid x:Name="TvChannelHost" Grid.Row="1" Margin="20,4,20,4"
+                              Visibility="Collapsed">
+                            <ToggleButton x:Name="TvChannelButton"
+                                          Height="34"
+                                          Content="All"
+                                          Style="{StaticResource CategoryToggle}"
+                                          Click="TvChannelButton_Click"/>
+                            <Popup x:Name="TvChannelPopup"
+                                   PlacementTarget="{Binding ElementName=TvChannelButton}"
+                                   Placement="Bottom"
+                                   StaysOpen="False"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade"
+                                   Width="{Binding ActualWidth, ElementName=TvChannelButton}"
+                                   Closed="TvChannelPopup_Closed">
+                                <Border Background="#151826" BorderBrush="#242A3D" BorderThickness="1"
+                                        CornerRadius="8" Margin="0,4,0,8" Padding="4">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="3" Opacity="0.5"/>
+                                    </Border.Effect>
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="4,4,4,6">
+                                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
+                                                    BorderThickness="1" CornerRadius="6"/>
+                                            <TextBox x:Name="TvChannelFilter"
+                                                     Height="32"
+                                                     VerticalContentAlignment="Center"
+                                                     Padding="10,0"
+                                                     FontSize="13"
+                                                     Background="Transparent"
+                                                     Foreground="#E7E9F1"
+                                                     CaretBrush="#E7E9F1"
+                                                     BorderThickness="0"
+                                                     TextChanged="TvChannelFilter_TextChanged"
+                                                     PreviewKeyDown="TvChannelFilter_PreviewKeyDown"/>
+                                            <TextBlock Text="Filter channels…"
+                                                       Foreground="#565C6D" Margin="11,0,0,0"
+                                                       FontSize="13" VerticalAlignment="Center"
+                                                       IsHitTestVisible="False">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Text.Length, ElementName=TvChannelFilter}" Value="0">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                        <ListBox x:Name="TvChannelList"
+                                                 Grid.Row="1"
+                                                 MaxHeight="320"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 ItemContainerStyle="{StaticResource ListItemContainer}"
+                                                 SelectionChanged="TvChannelList_SelectionChanged"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                            <ListBox.Resources>
+                                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                                            </ListBox.Resources>
+                                            <ListBox.GroupStyle>
+                                                <GroupStyle>
+                                                    <GroupStyle.HeaderTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding Name}"
+                                                                       Foreground="#565C6D"
+                                                                       FontSize="11"
+                                                                       FontWeight="SemiBold"
+                                                                       Margin="8,7,0,2"/>
+                                                        </DataTemplate>
+                                                    </GroupStyle.HeaderTemplate>
+                                                </GroupStyle>
+                                            </ListBox.GroupStyle>
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Label}" FontSize="13" Margin="8,6"/>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Grid>
+                                </Border>
+                            </Popup>
+                        </Grid>
+
+                        <!-- Filter (Browse/Series) or catalog search (Search segment) -->
+                        <Grid x:Name="TvFilterHost" Grid.Row="2" Margin="20,4,20,8">
+                            <Border Background="#08FFFFFF" BorderBrush="#1AFFFFFF"
+                                    BorderThickness="1" CornerRadius="8"/>
+                            <TextBox x:Name="TvSearchBox"
+                                     Height="38"
+                                     VerticalContentAlignment="Center"
+                                     Padding="12,0"
+                                     FontSize="13"
+                                     Background="Transparent"
+                                     Foreground="#E7E9F1"
+                                     CaretBrush="#E7E9F1"
+                                     BorderThickness="0"
+                                     TextChanged="TvSearch_TextChanged"/>
+                            <TextBlock x:Name="TvSearchPlaceholder"
+                                       Text="Filter titles…"
+                                       Foreground="#565C6D"
+                                       Margin="13,0,0,0"
+                                       FontSize="13"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text.Length, ElementName=TvSearchBox}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+
+                        <!-- Breadcrumb (Channel › Facet value, or Series › one series) -->
+                        <WrapPanel x:Name="TvBreadcrumbBar"
+                                   Grid.Row="3"
+                                   Margin="20,0,16,8"
+                                   Visibility="Collapsed"/>
+
+                        <!-- Status / empty state, with a spinner during async loads -->
+                        <Grid Grid.Row="4" Margin="20,4,20,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid x:Name="TvSpinner" Grid.Column="0"
+                                  Width="15" Height="15" Margin="0,0,8,0"
+                                  VerticalAlignment="Center" Visibility="Collapsed">
+                                <Ellipse Stroke="#2A3042" StrokeThickness="2"/>
+                                <Ellipse Stroke="#7D97FF" StrokeThickness="2"
+                                         StrokeDashArray="4 20" StrokeDashCap="Round"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform/>
+                                    </Ellipse.RenderTransform>
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsVisible" Value="True">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard Name="TvSpinnerSb">
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                    From="0" To="360" Duration="0:0:0.85"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="TvSpinnerSb"/>
+                                                    </Trigger.ExitActions>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                            </Grid>
+                            <TextBlock x:Name="TvStatusText"
+                                       Grid.Column="1"
+                                       Foreground="#848B9F"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Visibility="Collapsed"/>
+                        </Grid>
+
+                        <!-- Sign-in prompt. Nullcast.TV is switched on but has no credential:
+                             18+ films are filtered out of an anonymous read without saying so,
+                             which would make the catalog quietly disagree with itself. -->
+                        <Button x:Name="TvConnectButton"
+                                Grid.Row="5"
+                                HorizontalAlignment="Left"
+                                Margin="20,4,20,10"
+                                Content="Connect to Nullcast.TV"
+                                Style="{StaticResource AccentButton}"
+                                Visibility="Collapsed"
+                                Click="TvConnect_Click"/>
+
+                        <!-- View mode (list / tiles / full-screen) -->
+                        <DockPanel x:Name="TvViewToolbar"
+                                   Grid.Row="6"
+                                   Margin="20,0,20,8"
+                                   LastChildFill="False"
+                                   Visibility="Collapsed">
+                            <Button x:Name="TvFullscreenViewBtn"
+                                    DockPanel.Dock="Right"
+                                    Style="{StaticResource IconButton}"
+                                    Width="34" Height="28"
+                                    FontFamily="Segoe UI Symbol" FontSize="14"
+                                    Content="&#x26F6;"
+                                    ToolTip="Full-screen tiles (pauses playback)"
+                                    Click="TvFullscreenView_Click"/>
+                            <Button x:Name="TvTileViewBtn"
+                                    DockPanel.Dock="Right"
+                                    Style="{StaticResource IconButton}"
+                                    Width="34" Height="28"
+                                    FontFamily="Segoe UI Symbol" FontSize="14"
+                                    Content="&#x25A6;"
+                                    ToolTip="Tile view"
+                                    Margin="0,0,6,0"
+                                    Click="TvTileView_Click"/>
+                            <Button x:Name="TvListViewBtn"
+                                    DockPanel.Dock="Right"
+                                    Style="{StaticResource IconButton}"
+                                    Width="34" Height="28"
+                                    FontFamily="Segoe UI Symbol" FontSize="14"
+                                    Content="&#x2261;"
+                                    ToolTip="List view"
+                                    Margin="0,0,6,0"
+                                    Click="TvListView_Click"/>
+                        </DockPanel>
+
+                        <!-- Results — ItemTemplate + ItemsPanel swapped by ApplyTvViewMode() -->
+                        <ListBox x:Name="TvResultsBox"
+                                 Grid.Row="7"
+                                 Background="Transparent"
+                                 Foreground="#E7E9F1"
+                                 BorderThickness="0"
+                                 Padding="8,2,8,8"
+                                 ItemContainerStyle="{StaticResource ListItemContainer}"
+                                 ItemsSource="{Binding NullcastTvItems}"
+                                 ItemTemplate="{StaticResource TvListItemTemplate}"
+                                 ItemsPanel="{StaticResource TvListPanel}"
+                                 SelectionChanged="TvResultsBox_SelectionChanged"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Resources>
+                                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinDarkScrollBar}"/>
+                            </ListBox.Resources>
+                        </ListBox>
+
+                        <!-- The catalog pages, and the cursor is opaque — so "more" is a fact the
+                             last response reported, never something computed from a count. -->
+                        <Button x:Name="TvLoadMoreButton"
+                                Grid.Row="8"
+                                Margin="20,0,20,12"
+                                Height="32"
+                                FontSize="12"
+                                Content="Load more"
+                                Style="{StaticResource IconButton}"
+                                Visibility="Collapsed"
+                                Click="TvLoadMore_Click"/>
+                    </Grid>
+                    <!-- end NullcastTvContent -->
+
                     <!-- Podcast content (Apple Podcasts search → episode list → audio playback) -->
                     <Grid x:Name="PodcastContent" Grid.Column="1" Visibility="Collapsed">
                         <Grid.RowDefinitions>
@@ -2664,9 +3137,10 @@
                                     </Setter>
                                 </Style>
                             </StackPanel.Resources>
-                            <Button x:Name="SearchTabAll"       Tag="All"       Content="All"       Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
-                            <Button x:Name="SearchTabPlaylists" Tag="Playlist"  Content="Playlists" Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
-                            <Button x:Name="SearchTabPlex"      Tag="Plex"      Content="Plex"      Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
+                            <Button x:Name="SearchTabAll"        Tag="All"        Content="All"         Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
+                            <Button x:Name="SearchTabNullcastTv" Tag="NullcastTv" Content="Nullcast.TV" Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
+                            <Button x:Name="SearchTabPlaylists"  Tag="Playlist"   Content="Playlists"   Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
+                            <Button x:Name="SearchTabPlex"       Tag="Plex"       Content="Plex"        Style="{StaticResource SearchTabStyle}" Click="SearchTab_Click"/>
                         </StackPanel>
 
                         <!-- Results / empty-state -->

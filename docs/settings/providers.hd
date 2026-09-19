@@ -1,0 +1,138 @@
+---
+id: O4wUwBfpM0YyXuroziWgyy
+version: 2
+title: Providers and the Settings Dialog
+date: 2026-09-19
+description: How the per-install provider switches decide which sidebar tabs, search sources and settings pages exist, and how the settings dialog's left nav and save semantics are put together.
+tags: [settings, providers, ui]
+---
+
+# Providers and the Settings Dialog
+
+Nullcast now reads from five content providers, and no install uses all of them. This note covers
+the switch that decides which ones exist for a given install, and the shape of the dialog that
+holds it.
+
+## The provider switches
+
+Each provider is **independently switchable**, stored in `services.json` under `providers`:
+
+```json
+{
+  "providers": {
+    "playlists": true,
+    "nullcast_tv": false,
+    "plex": true,
+    "podcasts": true,
+    "ytmusic": true
+  }
+}
+```
+
+| Key | Provider | Default |
+|---|---|---|
+| `nullcast_tv` | Nullcast.TV | **off** |
+| `playlists` | the bookmarks service | on |
+| `plex` | Plex Media Server | on |
+| `podcasts` | Apple Podcasts | on |
+| `ytmusic` | YouTube Music | on |
+
+> [!NOTE]
+> Everything that shipped before the switch existed defaults to **on**, so upgrading is a no-op —
+> nobody's sidebar loses a tab. Nullcast.TV defaults to **off** because turning it on is a
+> decision to sign in, not just a decision to look.
+
+### What a switch controls
+
+One flag, three consequences:
+
+1. **The sidebar tab.** `ApplyProviderTabs` hides the tab outright. If the active tab is the one
+   being switched off, the selection moves to the leftmost survivor.
+2. **The Ctrl+K search source.** `RunSearchAsync` skips a disabled provider, its tab disappears
+   from the palette, and the placeholder line names only what this install can actually search.
+3. **Startup work.** A disabled provider is not touched at launch — Nullcast.TV does not even
+   restore its session.
+
+**History is not a provider.** It is an aggregator of whatever did play, it is always present,
+and it is what guarantees the tab strip can never be empty.
+
+### Enabled is not the same as configured
+
+The two are deliberately separate states:
+
+| | Plex | Nullcast.TV |
+|---|---|---|
+| Off | no tab at all | no tab at all |
+| On, no credential | tab shows "No Plex server configured" | tab shows the sign-in prompt |
+| On, configured | browses | browses |
+
+A tab that is on but unconfigured is a **real state the UI explains**, not one it hides. Hiding it
+would leave somebody who switched a provider on with no way to see why nothing happened.
+
+## The settings dialog
+
+### Why a left nav, not tabs
+
+The old dialog was a top tab strip: General / Plex / Tether. Three fits; **ten does not** — the
+strip wraps, and a wrapped tab row loses the one thing tabs are for, which is showing the whole
+set at once. The rail is a grouped `ListBox` and grows down instead of across:
+
+| Group | Pages |
+|---|---|
+| *(ungrouped)* | General |
+| Providers | Nullcast.TV · Playlists · Plex · Apple Podcasts · YouTube Music |
+| Advanced | Tether |
+
+Each row uses the house list-item look — rounded card, accent tint, 3px left bar — so selection
+reads the same here as it does in every list in the app. The right pane is a stack of
+`StackPanel`s inside one `ScrollViewer`; `Nav_SelectionChanged` shows exactly one.
+
+> [!NOTE]
+> **Every provider gets a page whether or not it is switched on.** The page is *where you switch
+> it on*, so hiding a disabled provider's page would make its own setting unreachable. Each page
+> leads with its "Use …" checkbox and then explains itself.
+
+### Sign-in moved out of the title bar
+
+The main window used to carry **Connect to Playlist** / **Sign out** / the account name in its top
+bar. With more than one account to hold, one pair of buttons could only ever speak for the first
+of them, so each provider's account block now lives on its own settings page. The top bar keeps
+the gear and nothing else.
+
+### Two different commit semantics
+
+The dialog does two kinds of thing, and they behave differently on purpose:
+
+<dl>
+  <dt><strong>Settings commit on Save</strong></dt>
+  <dd>
+    Provider switches, the Plex server and token, the Tether credentials, the personal access
+    token, and the General page are gathered in <code>Save_Click</code> and written then.
+    <strong>Cancel discards them.</strong>
+  </dd>
+
+  <dt><strong>Sign-in and sign-out apply immediately</strong></dt>
+  <dd>
+    They are actions against a remote service that have already happened by the time the button
+    returns. There is nothing to "save" and nothing Cancel could undo. The dialog reports them
+    through <code>PlaylistAuthChanged</code> / <code>NullcastTvAuthChanged</code>, and
+    <code>OpenServices_Click</code> applies those <em>whichever way the dialog closed</em>.
+  </dd>
+</dl>
+
+This is why **Test connection never commits**: a personal access token typed but not yet saved is
+tested as-is through `NullcastTvService.TestCredentialAsync`, exactly as the Plex page tests a
+typed server and token without persisting them.
+
+## Adding another provider
+
+1. Add the flag to `ProvidersConfig` (default `true` only if every existing install should keep
+   working unchanged) and a read-only accessor on `ServicesStore`.
+2. Add the member to `SidebarTab`, and to `IsTabEnabled` / `FirstEnabledTab` / `ApplyProviderTabs`.
+3. Add the tab button and content pane to `MainWindow.xaml`, and the `SelectTab` wiring.
+4. Add an `IntegrationSource` entry so History and the sidebar badge it in its own colour.
+5. Add a settings page plus one `NavEntry` under "Providers".
+6. If it is searchable: a `SearchSourceKind`, a tab button, a branch in `RunSearchAsync` /
+   `RebuildResults`, and a case in `ActivateSearchResult`.
+
+See [the Nullcast.TV notes](../nullcast-tv/integration-notes.hd) for a worked example of all six.

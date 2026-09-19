@@ -44,6 +44,37 @@ namespace VideoPlayer.Services
             catch { }
         }
 
+        // ── Providers (per-install on/off) ────────────────────
+
+        /// <summary>
+        /// The provider switches. Returned by reference so the settings dialog can edit them in
+        /// place and commit the lot with one <see cref="SaveProviders"/> — the same shape the
+        /// General tab uses for <c>AppSettings</c>.
+        /// </summary>
+        public ProvidersConfig Providers => _config.Providers ??= new ProvidersConfig();
+
+        /// <summary>Persist whatever the caller wrote onto <see cref="Providers"/>.</summary>
+        public void SaveProviders() => Save();
+
+        /// <summary>True when the Playlist (bookmarks) integration is switched on.</summary>
+        public bool PlaylistsEnabled => Providers.Playlists;
+
+        /// <summary>True when the Nullcast.TV catalog is switched on.</summary>
+        public bool NullcastTvEnabled => Providers.NullcastTv;
+
+        /// <summary>
+        /// True when the Plex integration is switched on. Independent of whether a server has
+        /// actually been configured — <see cref="IsPlexConfigured"/> answers that, and a tab
+        /// that is on but unconfigured is a real state the UI explains rather than hides.
+        /// </summary>
+        public bool PlexEnabled => Providers.Plex;
+
+        /// <summary>True when the Apple Podcasts integration is switched on.</summary>
+        public bool PodcastsEnabled => Providers.Podcasts;
+
+        /// <summary>True when the YouTube Music integration is switched on.</summary>
+        public bool YtMusicEnabled => Providers.YtMusic;
+
         // ── Plex ──────────────────────────────────────────────
 
         /// <summary>The saved Plex base URL (no trailing slash), or "" if none.</summary>
@@ -71,6 +102,38 @@ namespace VideoPlayer.Services
         public void ClearPlex()
         {
             _config.Plex = null;
+            Save();
+        }
+
+        // ── Nullcast.TV ──────────────────────────────────────
+
+        /// <summary>
+        /// The OAuth client id this install registered with Nullcast.TV, or "" if it has not
+        /// registered yet. Public metadata, not a secret — stored so the app registers once
+        /// rather than on every launch.
+        /// </summary>
+        public string NullcastTvClientId => _config.NullcastTv?.ClientId ?? "";
+
+        /// <summary>Remember the client id handed back by dynamic registration.</summary>
+        public void SetNullcastTvClientId(string clientId)
+        {
+            _config.NullcastTv ??= new NullcastTvConfig();
+            _config.NullcastTv.ClientId = (clientId ?? "").Trim();
+            Save();
+        }
+
+        /// <summary>Decrypts and returns the stored personal access token, or "" if none.</summary>
+        public string GetNullcastTvToken() =>
+            SecretProtector.Unprotect(_config.NullcastTv?.TokenEncrypted) ?? "";
+
+        /// <summary>True when a personal access token has been pasted in as the credential.</summary>
+        public bool HasNullcastTvToken => !string.IsNullOrEmpty(GetNullcastTvToken());
+
+        /// <summary>Store (encrypted) the personal access token. Pass "" to clear it.</summary>
+        public void SetNullcastTvToken(string rawToken)
+        {
+            _config.NullcastTv ??= new NullcastTvConfig();
+            _config.NullcastTv.TokenEncrypted = SecretProtector.Protect(rawToken?.Trim());
             Save();
         }
 

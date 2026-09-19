@@ -42,13 +42,76 @@ namespace VideoPlayer.Models
     }
 
     /// <summary>
+    /// Credentials for the Nullcast.TV catalog (<c>https://nullcast.tv/api/v1</c>).
+    /// <para>
+    /// OAuth is the normal door and its tokens live in their own file, not here — this row
+    /// holds the <see cref="ClientId"/> handed back by dynamic client registration (RFC 7591),
+    /// which is not a secret but must survive a restart or the app re-registers on every
+    /// launch and litters the server with dead client rows.
+    /// </para>
+    /// <para>
+    /// <see cref="TokenEncrypted"/> is the other door: a personal access token pasted in by
+    /// hand, for an install that cannot run a browser redirect. DPAPI-protected at rest.
+    /// </para>
+    /// </summary>
+    public class NullcastTvConfig
+    {
+        /// <summary>Client id from <c>POST /oauth/register</c>. Public by design, not a secret.</summary>
+        [JsonPropertyName("client_id")]
+        public string ClientId { get; set; } = "";
+
+        /// <summary>DPAPI-encrypted personal access token (<c>aitv_pat_…</c>), or "" for none.</summary>
+        [JsonPropertyName("token_encrypted")]
+        public string TokenEncrypted { get; set; } = "";
+    }
+
+    /// <summary>
+    /// Which content providers this install actually uses.
+    /// <para>
+    /// Every provider is independently switchable: a sidebar tab, its search source and its
+    /// settings page all appear only when its switch is on. Nobody should have to look at a
+    /// Plex tab on a machine with no Plex server, and a provider that requires an account
+    /// should not be able to sit half-on.
+    /// </para>
+    /// <para>
+    /// Everything that shipped before this switch existed defaults to <c>true</c>, so an
+    /// upgrade is a no-op. Nullcast.TV defaults to <c>false</c> — it is new, and turning it
+    /// on is a decision to sign in.
+    /// </para>
+    /// </summary>
+    public class ProvidersConfig
+    {
+        [JsonPropertyName("playlists")]
+        public bool Playlists { get; set; } = true;
+
+        [JsonPropertyName("nullcast_tv")]
+        public bool NullcastTv { get; set; }
+
+        [JsonPropertyName("plex")]
+        public bool Plex { get; set; } = true;
+
+        [JsonPropertyName("podcasts")]
+        public bool Podcasts { get; set; } = true;
+
+        [JsonPropertyName("ytmusic")]
+        public bool YtMusic { get; set; } = true;
+    }
+
+    /// <summary>
     /// Root of <c>services.json</c> — the registry of external services the player can
-    /// connect to. Plex is the first; the shape leaves room for more.
+    /// connect to, plus the per-install switch that decides which of them are in use.
     /// </summary>
     public class ServicesConfig
     {
+        /// <summary>Per-provider on/off. Never null — an absent block means "the old defaults".</summary>
+        [JsonPropertyName("providers")]
+        public ProvidersConfig Providers { get; set; } = new();
+
         [JsonPropertyName("plex")]
         public PlexServerConfig? Plex { get; set; }
+
+        [JsonPropertyName("nullcast_tv")]
+        public NullcastTvConfig? NullcastTv { get; set; }
 
         [JsonPropertyName("tether")]
         public TetherConfig? Tether { get; set; }

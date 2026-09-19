@@ -18,10 +18,14 @@ namespace VideoPlayer
     //
     // A single command-palette overlay that fans a query out across
     // every known source in parallel and shows a grouped, tab-filtered
-    // result list. v1 covers Plex (server-side /hubs/search) and the
-    // current workspace's bookmarks (client-side, already in memory);
-    // podcasts/history slot in later by adding a source to RunSearchAsync
-    // plus a Kind + tab button — nothing else here changes.
+    // result list. Covers Nullcast.TV (server-side /public/search), Plex
+    // (server-side /hubs/search) and the current workspace's bookmarks
+    // (client-side, already in memory); podcasts/history slot in later by
+    // adding a source to RunSearchAsync plus a Kind + tab button —
+    // nothing else here changes.
+    //
+    // A source only appears when its provider is switched on, which is
+    // also why every tab's visibility is decided fresh on each open.
     // ──────────────────────────────────────────────────────────
     public partial class MainWindow
     {
@@ -37,7 +41,7 @@ namespace VideoPlayer
         private int _searchGeneration;
         private bool _searchBusy;
 
-        // Active source tab: "All" | "Playlist" | "Plex" (matches SearchSourceKind names).
+        // Active source tab: "All" or a SearchSourceKind name ("NullcastTv", "Playlist", "Plex").
         private string _searchTab = "All";
 
         private const int MinQueryLength = 2;
@@ -54,10 +58,21 @@ namespace VideoPlayer
         {
             EnsureSearchView();
 
-            // Plex tab only makes sense when Plex is wired up.
-            bool plexOn = _services?.IsPlexConfigured == true;
-            SearchTabPlex.Visibility = plexOn ? Visibility.Visible : Visibility.Collapsed;
-            if (!plexOn && _searchTab == "Plex") _searchTab = "All";
+            // A tab only makes sense when its provider is switched on AND has a credential to
+            // search with. If the active tab just lost its source, fall back to All rather than
+            // showing an empty list with no way to tell why.
+            bool tvOn   = TvSearchAvailable;
+            bool listsOn = _services?.PlaylistsEnabled == true;
+            bool plexOn = _services?.PlexEnabled == true && _services.IsPlexConfigured;
+
+            SearchTabNullcastTv.Visibility = tvOn    ? Visibility.Visible : Visibility.Collapsed;
+            SearchTabPlaylists.Visibility  = listsOn ? Visibility.Visible : Visibility.Collapsed;
+            SearchTabPlex.Visibility       = plexOn  ? Visibility.Visible : Visibility.Collapsed;
+
+            if ((!tvOn   && _searchTab == "NullcastTv")
+             || (!listsOn && _searchTab == "Playlist")
+             || (!plexOn && _searchTab == "Plex"))
+                _searchTab = "All";
 
             SearchBox.Text = "";
             _searchResults.Clear();
@@ -134,9 +149,10 @@ namespace VideoPlayer
         {
             var tabs = new (Button Btn, string Tag)[]
             {
-                (SearchTabAll, "All"),
-                (SearchTabPlaylists, "Playlist"),
-                (SearchTabPlex, "Plex"),
+                (SearchTabAll,        "All"),
+                (SearchTabNullcastTv, "NullcastTv"),
+                (SearchTabPlaylists,  "Playlist"),
+                (SearchTabPlex,       "Plex"),
             };
             var active   = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xFB));
             var inactive = new SolidColorBrush(Color.FromRgb(0x84, 0x8B, 0x9F));
@@ -235,29 +251,46 @@ namespace VideoPlayer
             Services.Telemetry.Track("search", new() { ["query"] = query, ["length"] = query.Length });
 
             // 1) Bookmarks — synchronous, in-memory filter of the current workspace.
-            var bookmarks = FilterBookmarks(query);
+            var bookmarks = _services?.PlaylistsEnabled == true
+                ? FilterBookmarks(query)
+                : new List<Bookmark>();
 
-            // 2) Plex — server-side search (only when configured). Kick it off, but
-            //    render the instant bookmark hits first so the palette feels live.
-            bool plexOn = _services?.IsPlexConfigured == true && _plex != null;
+            // 2) The two server-side sources. Both are kicked off together so the slower one
+            //    sets the latency rather than the sum, and the instant bookmark hits render
+            //    first so the palette feels live while they are in flight.
+            bool plexOn = _services?.PlexEnabled == true && _services.IsPlexConfigured && _plex != null;
             Task<List<PlexItem>> plexTask = plexOn
                 ? _plex.SearchAsync(query)
                 : Task.FromResult(new List<PlexItem>());
 
-            _searchBusy = plexOn;
-            RebuildResults(bookmarks, null);
+            bool tvOn = TvSearchAvailable;
+            Task<TvSearchResults> tvTask = tvOn
+                ? _tv.SearchAsync(query)
+                : Task.FromResult(new TvSearchResults());
+
+            _searchBusy = plexOn || tvOn;
+            RebuildResults(bookmarks, null, null);
             UpdateSearchEmptyState();
 
-            List<PlexItem> plex;
-            try { plex = await plexTask; }
-            catch { plex = new List<PlexItem>(); }
+            List<PlexItem>  plex;
+            TvSearchResults tv;
+            try { plex = await plexTask; } catch { plex = new List<PlexItem>(); }
+            try { tv   = await tvTask;   } catch { tv   = new TvSearchResults(); }
 
             if (gen != _searchGeneration) return; // superseded by a newer keystroke
 
             _searchBusy = false;
-            RebuildResults(bookmarks, plex);
+            RebuildResults(bookmarks, plex, tv);
             UpdateSearchEmptyState();
         }
+
+        /// <summary>
+        /// Nullcast.TV can be searched: the provider is on and there is a credential. The
+        /// catalog does answer anonymously, but it withholds 18+ films without saying so, and a
+        /// search that silently omits results is worse than one that isn't offered.
+        /// </summary>
+        private bool TvSearchAvailable =>
+            _services?.NullcastTvEnabled == true && _tv != null && _tv.IsSignedIn;
 
         private List<Bookmark> FilterBookmarks(string q)
         {
@@ -271,9 +304,30 @@ namespace VideoPlayer
                 .ToList();
         }
 
-        private void RebuildResults(List<Bookmark> bookmarks, List<PlexItem> plex)
+        private void RebuildResults(List<Bookmark> bookmarks, List<PlexItem> plex, TvSearchResults tv)
         {
             _searchResults.Clear();
+
+            // Nullcast.TV first: it is the catalog this player is named after, and its films
+            // are the only rows here that need no local library to already contain them.
+            // Facet hits and series are deliberately left out — the palette plays things, and
+            // a directory is not something you can put on.
+            if (tv?.Videos != null)
+            {
+                foreach (var v in tv.Videos)
+                {
+                    var item = TvItem.FromVideo(v, Services.NullcastTvService.ResolveThumbUrl);
+                    _searchResults.Add(new SearchResult
+                    {
+                        Kind        = SearchSourceKind.NullcastTv,
+                        SourceBadge = SearchResult.BadgeFor(SearchSourceKind.NullcastTv),
+                        Title       = item.Title,
+                        Subtitle    = TvSubtitle(item),
+                        ThumbUrl    = item.ThumbUrl,
+                        Payload     = item,
+                    });
+                }
+            }
 
             foreach (var b in bookmarks)
             {
@@ -322,13 +376,38 @@ namespace VideoPlayer
             return string.Join("  ·  ", parts);
         }
 
+        /// <summary>"a", "a and b", "a, b and c" — for a sentence, not a debug dump.</summary>
+        private static string NaturalJoin(IReadOnlyList<string> parts) => parts.Count switch
+        {
+            0 => "",
+            1 => parts[0],
+            2 => $"{parts[0]} and {parts[1]}",
+            _ => string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[^1],
+        };
+
+        private static string TvSubtitle(TvItem t)
+        {
+            var parts = new[] { t.Subtitle, t.DurationLabel }
+                .Where(s => !string.IsNullOrWhiteSpace(s));
+            return string.Join("  ·  ", parts);
+        }
+
         private void UpdateSearchEmptyState()
         {
             var q = (SearchBox.Text ?? "").Trim();
 
             if (q.Length < MinQueryLength)
             {
-                SearchStatusText.Text = "Type to search your playlists and Plex library.";
+                // Name only what this install can actually search — promising Plex on a machine
+                // with no server is how a palette starts looking broken.
+                var sources = new List<string>();
+                if (TvSearchAvailable) sources.Add("Nullcast.TV");
+                if (_services?.PlaylistsEnabled == true) sources.Add("your playlists");
+                if (_services?.PlexEnabled == true && _services.IsPlexConfigured) sources.Add("your Plex library");
+
+                SearchStatusText.Text = sources.Count == 0
+                    ? "No searchable sources are switched on. Open Settings (⚙) to add one."
+                    : $"Type to search {NaturalJoin(sources)}.";
                 SearchStatusText.Visibility = Visibility.Visible;
                 return;
             }
@@ -351,6 +430,10 @@ namespace VideoPlayer
                 case PlexItem px:
                     Services.Telemetry.Track("search_result_activated", new() { ["result_type"] = "plex", ["title"] = px.Title ?? "" });
                     PlayPlexItem(px);
+                    break;
+                case TvItem tv:
+                    Services.Telemetry.Track("search_result_activated", new() { ["result_type"] = "nullcast_tv", ["title"] = tv.Title ?? "" });
+                    await PlayTvItemAsync(tv);
                     break;
                 case Bookmark bm:
                     Services.Telemetry.Track("search_result_activated", new() { ["result_type"] = "bookmark", ["title"] = bm.Title ?? "" });

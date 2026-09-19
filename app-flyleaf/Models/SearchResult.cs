@@ -13,6 +13,7 @@ namespace VideoPlayer.Models
 
     public enum SearchSourceKind
     {
+        NullcastTv,
         Playlist,
         Plex,
         Podcast,
@@ -38,11 +39,12 @@ namespace VideoPlayer.Models
 
         public static string BadgeFor(SearchSourceKind kind) => kind switch
         {
-            SearchSourceKind.Playlist => "Playlists",
-            SearchSourceKind.Plex     => "Plex",
-            SearchSourceKind.Podcast  => "Podcasts",
-            SearchSourceKind.History  => "History",
-            _                         => "Other"
+            SearchSourceKind.NullcastTv => "Nullcast.TV",
+            SearchSourceKind.Playlist   => "Playlists",
+            SearchSourceKind.Plex       => "Plex",
+            SearchSourceKind.Podcast    => "Podcasts",
+            SearchSourceKind.History    => "History",
+            _                           => "Other"
         };
     }
 }

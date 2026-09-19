@@ -53,6 +53,14 @@ namespace VideoPlayer.Models
         public bool PlexTileView { get; set; } = true;
 
         /// <summary>
+        /// Nullcast.TV results panel view: <c>true</c> = 16:9 tile grid, <c>false</c> = compact
+        /// list. Kept apart from <see cref="PlexTileView"/> because the two catalogs have
+        /// differently shaped artwork and are worth browsing differently. Defaults to tiles.
+        /// </summary>
+        [JsonPropertyName("nullcast_tv_tile_view")]
+        public bool NullcastTvTileView { get; set; } = true;
+
+        /// <summary>
         /// Sort order for the Plex browse list, as a <c>PlexSortMode</c> name (e.g. "TitleAsc").
         /// "Default" keeps each view's natural order. "Random" is never written here (shuffle is a
         /// one-shot action). Remembered across sessions.
